@@ -22,7 +22,6 @@ import asyncio
 from concurrent.futures import ThreadPoolExecutor
 import anthropic
 from pinecone import Pinecone
-from sentence_transformers import SentenceTransformer
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -45,10 +44,10 @@ PINECONE_API_KEY = os.environ.get("PINECONE_API_KEY", "pcsk_2PdVrk_CiVFvEbYqs8ts
 PINECONE_INDEX = "style-advice"
 TOP_K = 12  # number of chunks to retrieve
 
-# Initialize Pinecone and embedding model at module level
+# Initialize Pinecone at module level (no heavy ML model needed!)
 _pc = Pinecone(api_key=PINECONE_API_KEY)
 _pinecone_index = _pc.Index(PINECONE_INDEX)
-_embed_model = SentenceTransformer("all-MiniLM-L6-v2")
+EMBED_MODEL = "multilingual-e5-large"
 IMAGES_DIR = os.environ.get("IMAGES_DIR", os.path.expanduser("~/Downloads/images"))
 POSTS_JSON = os.environ.get("POSTS_JSON", os.path.expanduser("~/Downloads/dieworkwear_posts.json"))
 
@@ -115,8 +114,13 @@ Example output:
 
 def retrieve_context(query: str, n_results: int = TOP_K) -> tuple:
     """Retrieve relevant chunks from Pinecone. Returns (context_text, metadata_list)."""
-    # Embed the query
-    query_embedding = _embed_model.encode(query).tolist()
+    # Embed the query using Pinecone's inference API
+    embed_result = _pc.inference.embed(
+        model=EMBED_MODEL,
+        inputs=[query],
+        parameters={"input_type": "query"},
+    )
+    query_embedding = embed_result.data[0].values
 
     # Query Pinecone
     results = _pinecone_index.query(

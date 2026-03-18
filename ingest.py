@@ -1,8 +1,8 @@
 """
 Ingest scraped blog posts into Pinecone vector store.
 
-Supports multiple sources (Die, Workwear!, Permanent Style, etc.)
-in a single unified index for RAG queries.
+Uses Pinecone's built-in inference API for embeddings (multilingual-e5-large)
+so the server doesn't need to load sentence-transformers.
 
 Usage:
     python ingest.py                          # Ingest all known sources
@@ -13,13 +13,14 @@ Usage:
 import json
 import sys
 import os
-from sentence_transformers import SentenceTransformer
+import time
 from pinecone import Pinecone
 
 CHUNK_SIZE = 800  # words per chunk
 CHUNK_OVERLAP = 100  # word overlap between chunks
 PINECONE_API_KEY = os.environ.get("PINECONE_API_KEY", "pcsk_2PdVrk_CiVFvEbYqs8ts2GqJ69PMurqFpkeJDBjA1JdoPCzGJ6xvovgtn8jxLHyy5STAbH")
 INDEX_NAME = "style-advice"
+EMBED_MODEL = "multilingual-e5-large"
 
 # Known data sources (relative to ~/Downloads)
 KNOWN_SOURCES = [
@@ -46,7 +47,27 @@ def chunk_text(text, chunk_size=CHUNK_SIZE, overlap=CHUNK_OVERLAP):
     return chunks
 
 
-def ingest_file(json_path, index, model, source_prefix):
+def embed_texts(pc, texts, max_retries=5):
+    """Embed texts using Pinecone's inference API with rate limit handling."""
+    for attempt in range(max_retries):
+        try:
+            result = pc.inference.embed(
+                model=EMBED_MODEL,
+                inputs=texts,
+                parameters={"input_type": "passage"},
+            )
+            return [r.values for r in result.data]
+        except Exception as e:
+            if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
+                wait = 30 * (attempt + 1)
+                print(f"    Rate limited, waiting {wait}s...")
+                time.sleep(wait)
+            else:
+                raise
+    raise Exception("Max retries exceeded for embedding")
+
+
+def ingest_file(json_path, pc, index, source_prefix):
     """Ingest a single JSON file into Pinecone. Returns (posts, chunks) counts."""
     print(f"\nLoading posts from {json_path}...")
     with open(json_path, "r", encoding="utf-8") as f:
@@ -79,22 +100,22 @@ def ingest_file(json_path, index, model, source_prefix):
                 "chunk_index": j,
                 "total_chunks": len(chunks),
                 "word_count": len(chunk.split()),
-                "text": chunk,  # Store the text in metadata for retrieval
+                "text": chunk,
             }
             all_chunks.append(chunk)
             all_metadatas.append(meta)
             all_ids.append(doc_id)
 
-    # Embed and upsert in batches
-    batch_size = 100  # Pinecone recommends ~100 vectors per upsert
+    # Embed and upsert in small batches with rate limit awareness
+    batch_size = 20  # Small batches to stay under token limit
     for start in range(0, len(all_chunks), batch_size):
         end = min(start + batch_size, len(all_chunks))
         batch_texts = all_chunks[start:end]
         batch_ids = all_ids[start:end]
         batch_metas = all_metadatas[start:end]
 
-        # Generate embeddings
-        embeddings = model.encode(batch_texts).tolist()
+        # Get embeddings from Pinecone inference
+        embeddings = embed_texts(pc, batch_texts)
 
         # Upsert to Pinecone
         vectors = []
@@ -103,6 +124,7 @@ def ingest_file(json_path, index, model, source_prefix):
         index.upsert(vectors=vectors)
 
         print(f"  Indexed {end}/{len(all_chunks)} chunks...")
+        time.sleep(2)  # Rate limit: 250K tokens/min on free tier
 
     post_count = sum(1 for p in posts if p.get("text"))
     print(f"  ✓ Indexed {len(all_chunks)} chunks from {post_count} posts")
@@ -136,18 +158,17 @@ def main():
 
     if reset:
         print("  Deleting all vectors...")
-        index.delete(delete_all=True)
-        print("  ✓ Index cleared")
-
-    # Load embedding model
-    print("Loading embedding model (all-MiniLM-L6-v2)...")
-    model = SentenceTransformer("all-MiniLM-L6-v2")
+        try:
+            index.delete(delete_all=True)
+            print("  ✓ Index cleared")
+        except Exception:
+            print("  Index already empty")
 
     # Ingest each file
     total_posts = 0
     total_chunks = 0
     for path, prefix in files:
-        posts, chunks = ingest_file(path, index, model, prefix)
+        posts, chunks = ingest_file(path, pc, index, prefix)
         total_posts += posts
         total_chunks += chunks
 
