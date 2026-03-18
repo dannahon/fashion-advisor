@@ -29,6 +29,7 @@ COLLECTION_NAME = "style_advice"
 KNOWN_SOURCES = [
     os.path.expanduser("~/Downloads/dieworkwear_posts.json"),
     os.path.expanduser("~/Downloads/permanentstyle_posts.json"),
+    os.path.expanduser("~/Downloads/putthison_posts.json"),
 ]
 
 

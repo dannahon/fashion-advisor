@@ -193,12 +193,35 @@ def convert_image_for_claude(contents: bytes, content_type: str) -> tuple:
         raise HTTPException(status_code=400, detail=f"Could not process image: {str(e)}")
 
 
-def ask_claude(system: str, user_content: list, max_tokens: int = 2048) -> str:
+def format_profile(profile) -> str:
+    """Build a profile context string from a UserProfile."""
+    if not profile:
+        return ""
+    parts = []
+    if profile.height:
+        parts.append(profile.height)
+    if profile.build:
+        parts.append(f"{profile.build} build")
+    if profile.budget:
+        budget_desc = {
+            "budget": "value-conscious (prioritize best bang for the buck — affordable brands, sales, and smart buys)",
+            "moderate": "willing to invest in quality pieces (mix of mid-range and premium where it matters most, like shoes and outerwear)",
+            "luxury": "open to premium and luxury options (but still recommend the best product regardless of price — a $40 t-shirt can be better than a $200 one)",
+        }
+        desc = budget_desc.get(profile.budget, profile.budget)
+        parts.append(desc)
+    if not parts:
+        return ""
+    return "\n\nUser profile: " + ", ".join(parts) + ". Tailor your advice to their body type and budget preferences."
+
+
+def ask_claude(system: str, user_content: list, max_tokens: int = 2048, temperature: float = 1.0) -> str:
     """Send a request to Claude and return the text response."""
     client = anthropic.Anthropic()
     response = client.messages.create(
         model=CLAUDE_MODEL,
         max_tokens=max_tokens,
+        temperature=temperature,
         system=system,
         messages=[{"role": "user", "content": user_content}],
     )
@@ -231,9 +254,16 @@ async def root():
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
+class UserProfile(BaseModel):
+    height: Optional[str] = None
+    build: Optional[str] = None
+    budget: Optional[str] = None
+
+
 class AdviceRequest(BaseModel):
     question: str
     context: Optional[str] = None
+    profile: Optional[UserProfile] = None
 
 
 class ShopRequest(BaseModel):
@@ -248,6 +278,7 @@ class AdviceResponse(BaseModel):
 
 class VibeRequest(BaseModel):
     vibe: str
+    profile: Optional[UserProfile] = None
 
 
 class ShopItem(BaseModel):
@@ -264,7 +295,7 @@ class VibeResponse(BaseModel):
     items: List[ShopItem]
 
 
-def search_product(item_info) -> dict:
+def search_product(item_info, budget="") -> dict:
     """Search for a real, in-stock product using SerpAPI Google organic + images."""
     if isinstance(item_info, str):
         item, brand, product = item_info, "", ""
@@ -274,11 +305,15 @@ def search_product(item_info) -> dict:
         product = item_info.get("product", "")
 
     if product and brand:
-        query = f"{brand} {product}"
+        query = f"{brand} {product} men's"
     elif brand:
-        query = f"{brand} {item}"
+        query = f"{brand} {item} men's"
     else:
         query = f"men's {item}"
+
+    # Add price hint based on budget (gentle nudge, not hard filter)
+    if budget == "budget":
+        query += " affordable"
 
     skip_domains = ("poshmark.com", "ebay.", "etsy.com", "pinterest.", "reddit.com",
                     "youtube.com", "facebook.com", "instagram.com", "twitter.com",
@@ -372,6 +407,7 @@ async def get_advice(req: AdviceRequest):
 User's question: {req.question}"""
     if req.context:
         user_message += f"\nAdditional context: {req.context}"
+    user_message += format_profile(req.profile)
 
     answer = ask_claude(SYSTEM_PROMPT, [{"type": "text", "text": user_message}])
 
@@ -381,8 +417,10 @@ User's question: {req.question}"""
 @app.post("/outfit-check", response_model=AdviceResponse)
 async def check_outfit(
     image: UploadFile = File(...),
+    description: str = Form(""),
+    profile: str = Form(""),
 ):
-    """Upload an outfit photo for style critique. Image-only — no text input."""
+    """Upload an outfit photo for style critique, with optional text description."""
     contents = await image.read()
     if len(contents) > 20 * 1024 * 1024:
         raise HTTPException(status_code=413, detail="Image must be under 20MB")
@@ -393,18 +431,37 @@ async def check_outfit(
 
     # Retrieve context about outfit evaluation
     search_terms = "outfit evaluation fit proportions style critique clothing"
+    if description:
+        search_terms = description + " " + search_terms
     context, metadatas = retrieve_context(search_terms)
+
+    desc_line = ""
+    if description.strip():
+        desc_line = f"\n\nThe user describes their outfit as: {description.strip()}\n\nUse this description to correctly identify the pieces in the photo."
+
+    # Parse profile from JSON string (multipart form can't send nested objects)
+    profile_obj = None
+    if profile:
+        try:
+            import json as _json
+            pdata = _json.loads(profile)
+            profile_obj = UserProfile(**pdata)
+        except Exception:
+            pass
+    profile_line = format_profile(profile_obj)
 
     user_content = [
         {
             "type": "text",
-            "text": f"""Here are relevant style insights from the Die, Workwear! blog:
+            "text": f"""Here are relevant style insights from expert menswear sources:
 
 {context}
 
 ---
 
-The user has uploaded a photo of their outfit. Break down every piece in the outfit — what it is, how it fits, and how it works with the rest. Then give an honest, constructive overall critique with specific suggestions for improvement.""",
+The user has uploaded a photo of their outfit.{desc_line} Break down every piece in the outfit — what it is, how it fits, and how it works with the rest. Then give an honest, constructive overall critique with specific suggestions for improvement.
+
+Important: If any item (especially footwear) is hard to make out due to distance, lighting, or angle, say so honestly rather than guessing. For example, say "these appear to be X, though it's hard to tell from the photo" instead of stating it as fact.{profile_line}""",
         },
         {
             "type": "image",
@@ -416,7 +473,7 @@ The user has uploaded a photo of their outfit. Break down every piece in the out
         },
     ]
 
-    answer = ask_claude(SYSTEM_PROMPT, user_content, max_tokens=3000)
+    answer = ask_claude(SYSTEM_PROMPT, user_content, max_tokens=3000, temperature=0.3)
 
     return AdviceResponse(answer=answer)
 
@@ -468,7 +525,7 @@ async def get_vibe_recommendations(req: VibeRequest):
 ---
 
 The user wants to dress for this vibe/occasion: "{req.vibe}"
-
+{format_profile(req.profile)}
 Return a JSON array of 6-8 item descriptions for a complete outfit that nails this vibe. Remember: ONLY output the JSON array, nothing else."""
 
     raw_items = ask_claude(VIBE_ITEMS_PROMPT, [{"type": "text", "text": items_message}])
@@ -483,9 +540,10 @@ Return a JSON array of 6-8 item descriptions for a complete outfit that nails th
         raise HTTPException(status_code=502, detail="Failed to parse outfit items")
 
     # Phase 2: Search for real, in-stock products for each item
+    budget = req.profile.budget if req.profile else ""
     loop = asyncio.get_event_loop()
     search_tasks = [
-        loop.run_in_executor(_executor, search_product, item_info)
+        loop.run_in_executor(_executor, search_product, item_info, budget)
         for item_info in item_descriptions
     ]
     search_results = await asyncio.gather(*search_tasks)
