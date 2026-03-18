@@ -133,39 +133,6 @@ def retrieve_context(query: str, n_results: int = TOP_K) -> tuple:
     return "\n\n".join(context_parts), results["metadatas"][0]
 
 
-@app.get("/health")
-async def health_check():
-    """Debug endpoint to check if all services are working."""
-    status = {"server": "ok", "chromadb": "unknown", "anthropic": "unknown", "collection": "unknown"}
-    # Check ChromaDB
-    try:
-        client = chromadb.PersistentClient(path=DB_DIR)
-        collections = client.list_collections()
-        status["chromadb"] = "ok"
-        status["collections"] = [c.name for c in collections]
-        # Check if our collection exists
-        for c in collections:
-            if c.name in ("style_advice", "dieworkwear"):
-                col = client.get_collection(c.name)
-                status["collection"] = f"{c.name}: {col.count()} chunks"
-                break
-    except Exception as e:
-        status["chromadb"] = f"error: {str(e)}"
-    # Check Anthropic key
-    try:
-        key = os.environ.get("ANTHROPIC_API_KEY", "")
-        status["anthropic"] = f"key set ({len(key)} chars)" if key else "NO KEY SET"
-    except Exception as e:
-        status["anthropic"] = f"error: {str(e)}"
-    # Check DB_DIR
-    status["db_dir"] = DB_DIR
-    status["db_dir_exists"] = os.path.exists(DB_DIR)
-    if os.path.exists(DB_DIR):
-        files = os.listdir(DB_DIR)
-        status["db_files"] = files[:10]
-    return status
-
-
 def get_sources(metadatas):
     """Extract unique sources from metadata list."""
     sources = []
@@ -289,6 +256,34 @@ async def root():
 
 
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+
+@app.get("/health")
+async def health_check():
+    """Debug endpoint to check if all services are working."""
+    status = {"server": "ok", "chromadb": "unknown", "anthropic": "unknown", "collection": "unknown"}
+    try:
+        client = chromadb.PersistentClient(path=DB_DIR)
+        collections = client.list_collections()
+        status["chromadb"] = "ok"
+        status["collections"] = [c.name for c in collections]
+        for c in collections:
+            if c.name in ("style_advice", "dieworkwear"):
+                col = client.get_collection(c.name)
+                status["collection"] = f"{c.name}: {col.count()} chunks"
+                break
+    except Exception as e:
+        status["chromadb"] = f"error: {str(e)}"
+    try:
+        key = os.environ.get("ANTHROPIC_API_KEY", "")
+        status["anthropic"] = f"key set ({len(key)} chars)" if key else "NO KEY SET"
+    except Exception as e:
+        status["anthropic"] = f"error: {str(e)}"
+    status["db_dir"] = DB_DIR
+    status["db_dir_exists"] = os.path.exists(DB_DIR)
+    if os.path.exists(DB_DIR):
+        status["db_files"] = os.listdir(DB_DIR)[:10]
+    return status
 
 
 class UserProfile(BaseModel):
