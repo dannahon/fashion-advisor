@@ -1,35 +1,33 @@
 """
-Ingest scraped blog posts into a ChromaDB vector store.
+Ingest scraped blog posts into Pinecone vector store.
 
 Supports multiple sources (Die, Workwear!, Permanent Style, etc.)
-in a single unified collection for RAG queries.
+in a single unified index for RAG queries.
 
 Usage:
     python ingest.py                          # Ingest all known sources
     python ingest.py path/to/posts.json       # Ingest a single file
-    python ingest.py --reset                  # Wipe DB and re-ingest all
-
-Defaults to ingesting both:
-    - ~/Downloads/dieworkwear_posts.json
-    - ~/Downloads/permanentstyle_posts.json
+    python ingest.py --reset                  # Wipe index and re-ingest all
 """
 
 import json
 import sys
 import os
-import chromadb
-from chromadb.utils import embedding_functions
+from sentence_transformers import SentenceTransformer
+from pinecone import Pinecone
 
 CHUNK_SIZE = 800  # words per chunk
 CHUNK_OVERLAP = 100  # word overlap between chunks
-DB_DIR = os.path.join(os.path.dirname(__file__), "chroma_db")
-COLLECTION_NAME = "style_advice"
+PINECONE_API_KEY = os.environ.get("PINECONE_API_KEY", "pcsk_2PdVrk_CiVFvEbYqs8ts2GqJ69PMurqFpkeJDBjA1JdoPCzGJ6xvovgtn8jxLHyy5STAbH")
+INDEX_NAME = "style-advice"
 
 # Known data sources (relative to ~/Downloads)
 KNOWN_SOURCES = [
     os.path.expanduser("~/Downloads/dieworkwear_posts.json"),
     os.path.expanduser("~/Downloads/permanentstyle_posts.json"),
     os.path.expanduser("~/Downloads/putthison_posts.json"),
+    os.path.expanduser("~/Downloads/highsnobiety_posts.json"),
+    os.path.expanduser("~/Downloads/hypebeast_posts.json"),
 ]
 
 
@@ -48,8 +46,8 @@ def chunk_text(text, chunk_size=CHUNK_SIZE, overlap=CHUNK_OVERLAP):
     return chunks
 
 
-def ingest_file(json_path, collection, source_prefix):
-    """Ingest a single JSON file into the collection. Returns (posts, chunks) counts."""
+def ingest_file(json_path, index, model, source_prefix):
+    """Ingest a single JSON file into Pinecone. Returns (posts, chunks) counts."""
     print(f"\nLoading posts from {json_path}...")
     with open(json_path, "r", encoding="utf-8") as f:
         data = json.load(f)
@@ -60,9 +58,9 @@ def ingest_file(json_path, collection, source_prefix):
     print(f"  Source: {source} | Author: {author}")
     print(f"  Found {len(posts)} posts, {data.get('total_words', 0):,} total words")
 
-    documents = []
-    metadatas = []
-    ids = []
+    all_chunks = []
+    all_metadatas = []
+    all_ids = []
 
     for i, post in enumerate(posts):
         if not post.get("text"):
@@ -81,25 +79,34 @@ def ingest_file(json_path, collection, source_prefix):
                 "chunk_index": j,
                 "total_chunks": len(chunks),
                 "word_count": len(chunk.split()),
+                "text": chunk,  # Store the text in metadata for retrieval
             }
-            documents.append(chunk)
-            metadatas.append(meta)
-            ids.append(doc_id)
+            all_chunks.append(chunk)
+            all_metadatas.append(meta)
+            all_ids.append(doc_id)
 
-    # ChromaDB has a batch limit, so add in batches of 500
-    batch_size = 500
-    for start in range(0, len(documents), batch_size):
-        end = min(start + batch_size, len(documents))
-        collection.add(
-            documents=documents[start:end],
-            metadatas=metadatas[start:end],
-            ids=ids[start:end],
-        )
-        print(f"  Indexed {end}/{len(documents)} chunks...")
+    # Embed and upsert in batches
+    batch_size = 100  # Pinecone recommends ~100 vectors per upsert
+    for start in range(0, len(all_chunks), batch_size):
+        end = min(start + batch_size, len(all_chunks))
+        batch_texts = all_chunks[start:end]
+        batch_ids = all_ids[start:end]
+        batch_metas = all_metadatas[start:end]
+
+        # Generate embeddings
+        embeddings = model.encode(batch_texts).tolist()
+
+        # Upsert to Pinecone
+        vectors = []
+        for vid, emb, meta in zip(batch_ids, embeddings, batch_metas):
+            vectors.append({"id": vid, "values": emb, "metadata": meta})
+        index.upsert(vectors=vectors)
+
+        print(f"  Indexed {end}/{len(all_chunks)} chunks...")
 
     post_count = sum(1 for p in posts if p.get("text"))
-    print(f"  ✓ Indexed {len(documents)} chunks from {post_count} posts")
-    return post_count, len(documents)
+    print(f"  ✓ Indexed {len(all_chunks)} chunks from {post_count} posts")
+    return post_count, len(all_chunks)
 
 
 def main():
@@ -122,44 +129,38 @@ def main():
         print("No data files found. Run the scrapers first.")
         return
 
-    # Set up embedding function
+    # Set up Pinecone
+    print("Connecting to Pinecone...")
+    pc = Pinecone(api_key=PINECONE_API_KEY)
+    index = pc.Index(INDEX_NAME)
+
+    if reset:
+        print("  Deleting all vectors...")
+        index.delete(delete_all=True)
+        print("  ✓ Index cleared")
+
+    # Load embedding model
     print("Loading embedding model (all-MiniLM-L6-v2)...")
-    ef = embedding_functions.SentenceTransformerEmbeddingFunction(
-        model_name="all-MiniLM-L6-v2"
-    )
-
-    client = chromadb.PersistentClient(path=DB_DIR)
-
-    # Delete existing collection if resetting or re-ingesting all
-    if reset or not args:
-        for name in [COLLECTION_NAME, "dieworkwear"]:
-            try:
-                client.delete_collection(name)
-                print(f"  Deleted existing '{name}' collection")
-            except Exception:
-                pass
-
-    collection = client.get_or_create_collection(
-        name=COLLECTION_NAME,
-        embedding_function=ef,
-        metadata={"hnsw:space": "cosine"},
-    )
+    model = SentenceTransformer("all-MiniLM-L6-v2")
 
     # Ingest each file
     total_posts = 0
     total_chunks = 0
     for path, prefix in files:
-        posts, chunks = ingest_file(path, collection, prefix)
+        posts, chunks = ingest_file(path, index, model, prefix)
         total_posts += posts
         total_chunks += chunks
+
+    # Check final stats
+    stats = index.describe_index_stats()
 
     print(f"\n{'=' * 60}")
     print(f"  ✅ DONE!")
     print(f"{'=' * 60}")
     print(f"  Total posts:   {total_posts:,}")
     print(f"  Total chunks:  {total_chunks:,}")
-    print(f"  Collection:    {COLLECTION_NAME}")
-    print(f"  Vector store:  {DB_DIR}")
+    print(f"  Pinecone vectors: {stats['total_vector_count']:,}")
+    print(f"  Index:         {INDEX_NAME}")
     print(f"{'=' * 60}\n")
 
 

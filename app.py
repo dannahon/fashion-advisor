@@ -21,8 +21,8 @@ import json
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 import anthropic
-import chromadb
-from chromadb.utils import embedding_functions
+from pinecone import Pinecone
+from sentence_transformers import SentenceTransformer
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -39,10 +39,16 @@ except ImportError:
 
 _executor = ThreadPoolExecutor(max_workers=8)
 
-DB_DIR = os.path.join(os.path.dirname(__file__), "chroma_db")
 CLAUDE_MODEL = "claude-sonnet-4-20250514"
 SERPAPI_KEY = os.environ.get("SERPAPI_KEY", "eaf631bccd0471c91ad21097a4c78eb76978dabbc4b88a76825b4d2564c00b6f")
+PINECONE_API_KEY = os.environ.get("PINECONE_API_KEY", "pcsk_2PdVrk_CiVFvEbYqs8ts2GqJ69PMurqFpkeJDBjA1JdoPCzGJ6xvovgtn8jxLHyy5STAbH")
+PINECONE_INDEX = "style-advice"
 TOP_K = 12  # number of chunks to retrieve
+
+# Initialize Pinecone and embedding model at module level
+_pc = Pinecone(api_key=PINECONE_API_KEY)
+_pinecone_index = _pc.Index(PINECONE_INDEX)
+_embed_model = SentenceTransformer("all-MiniLM-L6-v2")
 IMAGES_DIR = os.environ.get("IMAGES_DIR", os.path.expanduser("~/Downloads/images"))
 POSTS_JSON = os.environ.get("POSTS_JSON", os.path.expanduser("~/Downloads/dieworkwear_posts.json"))
 
@@ -107,30 +113,29 @@ Example output:
 
 
 
-def get_collection():
-    ef = embedding_functions.SentenceTransformerEmbeddingFunction(
-        model_name="all-MiniLM-L6-v2"
-    )
-    client = chromadb.PersistentClient(path=DB_DIR)
-    # Try style_advice first, fall back to dieworkwear for backwards compat
-    try:
-        return client.get_collection("style_advice", embedding_function=ef)
-    except Exception:
-        return client.get_collection("dieworkwear", embedding_function=ef)
-
-
 def retrieve_context(query: str, n_results: int = TOP_K) -> tuple:
-    """Retrieve relevant chunks from the vector store. Returns (context_text, metadata_list)."""
-    collection = get_collection()
-    results = collection.query(query_texts=[query], n_results=n_results)
+    """Retrieve relevant chunks from Pinecone. Returns (context_text, metadata_list)."""
+    # Embed the query
+    query_embedding = _embed_model.encode(query).tolist()
+
+    # Query Pinecone
+    results = _pinecone_index.query(
+        vector=query_embedding,
+        top_k=n_results,
+        include_metadata=True,
+    )
 
     context_parts = []
-    for doc, meta in zip(results["documents"][0], results["metadatas"][0]):
+    metadatas = []
+    for match in results["matches"]:
+        meta = match.get("metadata", {})
+        doc = meta.get("text", "")
         title = meta.get("title", "Untitled")
         date = meta.get("date", "")
         context_parts.append(f'--- From "{title}" ({date}) ---\n{doc}')
+        metadatas.append(meta)
 
-    return "\n\n".join(context_parts), results["metadatas"][0]
+    return "\n\n".join(context_parts), metadatas
 
 
 def get_sources(metadatas):
@@ -261,28 +266,15 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 @app.get("/health")
 async def health_check():
     """Debug endpoint to check if all services are working."""
-    status = {"server": "ok", "chromadb": "unknown", "anthropic": "unknown", "collection": "unknown"}
+    status = {"server": "ok", "pinecone": "unknown", "anthropic": "unknown"}
     try:
-        client = chromadb.PersistentClient(path=DB_DIR)
-        collections = client.list_collections()
-        status["chromadb"] = "ok"
-        status["collections"] = [c.name for c in collections]
-        for c in collections:
-            if c.name in ("style_advice", "dieworkwear"):
-                col = client.get_collection(c.name)
-                status["collection"] = f"{c.name}: {col.count()} chunks"
-                break
+        stats = _pinecone_index.describe_index_stats()
+        status["pinecone"] = "ok"
+        status["vectors"] = stats.get("total_vector_count", 0)
     except Exception as e:
-        status["chromadb"] = f"error: {str(e)}"
-    try:
-        key = os.environ.get("ANTHROPIC_API_KEY", "")
-        status["anthropic"] = f"key set ({len(key)} chars)" if key else "NO KEY SET"
-    except Exception as e:
-        status["anthropic"] = f"error: {str(e)}"
-    status["db_dir"] = DB_DIR
-    status["db_dir_exists"] = os.path.exists(DB_DIR)
-    if os.path.exists(DB_DIR):
-        status["db_files"] = os.listdir(DB_DIR)[:10]
+        status["pinecone"] = f"error: {str(e)}"
+    key = os.environ.get("ANTHROPIC_API_KEY", "")
+    status["anthropic"] = f"key set ({len(key)} chars)" if key else "NO KEY SET"
     return status
 
 
@@ -604,12 +596,3 @@ Return a JSON array of 6-8 item descriptions for a complete outfit that nails th
     return VibeResponse(vibe=req.vibe, items=items)
 
 
-@app.get("/health")
-async def health():
-    """Health check — also verifies the vector store is loaded."""
-    try:
-        collection = get_collection()
-        count = collection.count()
-        return {"status": "ok", "chunks_indexed": count, "images_indexed": len(IMAGE_INDEX)}
-    except Exception as e:
-        return {"status": "error", "detail": str(e)}
