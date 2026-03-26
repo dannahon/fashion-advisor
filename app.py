@@ -309,6 +309,14 @@ class VibeRequest(BaseModel):
     profile: Optional[UserProfile] = None
 
 
+class RefreshRequest(BaseModel):
+    item: str
+    brand: str = ""
+    product: str = ""
+    budget: str = ""
+    exclude_links: List[str] = []
+
+
 class ShopItem(BaseModel):
     name: str
     brand: str
@@ -316,6 +324,8 @@ class ShopItem(BaseModel):
     link: str
     description: str
     image: str = ""
+    search_item: str = ""
+    search_product: str = ""
 
 
 class VibeResponse(BaseModel):
@@ -323,8 +333,12 @@ class VibeResponse(BaseModel):
     items: List[ShopItem]
 
 
-def search_product(item_info, budget="") -> dict:
+def search_product(item_info, budget="", exclude_links=None) -> dict:
     """Search for a real, in-stock product using SerpAPI Google organic + images."""
+    if exclude_links is None:
+        exclude_links = []
+    exclude_set = set(exclude_links)
+
     if isinstance(item_info, str):
         item, brand, product = item_info, "", ""
     else:
@@ -357,12 +371,14 @@ def search_product(item_info, budget="") -> dict:
             "engine": "google",
             "q": f"{query} buy",
             "api_key": SERPAPI_KEY,
-            "num": 8,
+            "num": 15,
         })
         data = search.get_dict()
         for r in data.get("organic_results", []):
             link = r.get("link", "")
             lower = link.lower()
+            if link in exclude_set:
+                continue
             if any(d in lower for d in skip_domains):
                 continue
             if any(p in lower for p in skip_paths):
@@ -596,9 +612,12 @@ Return a JSON array of 6-8 item descriptions for a complete outfit that nails th
         if isinstance(item_info, str):
             brand = ""
             description = item_info
+            s_item, s_product = item_info, ""
         else:
             brand = item_info.get("brand", "")
             description = item_info.get("item", "")
+            s_item = item_info.get("item", "")
+            s_product = item_info.get("product", "")
 
         items.append(ShopItem(
             name=sr["title"],
@@ -607,8 +626,30 @@ Return a JSON array of 6-8 item descriptions for a complete outfit that nails th
             link=sr["link"],
             description=description,
             image=sr["image_url"],
+            search_item=s_item,
+            search_product=s_product,
         ))
 
     return VibeResponse(vibe=req.vibe, items=items)
+
+
+@app.post("/shop-refresh", response_model=ShopItem)
+async def refresh_product(req: RefreshRequest):
+    """Get an alternative product for the same item category, excluding previously seen links."""
+    item_info = {"item": req.item, "brand": req.brand, "product": req.product}
+    loop = asyncio.get_event_loop()
+    sr = await loop.run_in_executor(
+        _executor, search_product, item_info, req.budget, req.exclude_links
+    )
+    if not sr["link"]:
+        raise HTTPException(status_code=404, detail="No more alternatives found")
+    return ShopItem(
+        name=sr["title"],
+        brand=req.brand,
+        price=sr.get("price", "") or "See site",
+        link=sr["link"],
+        description=req.item,
+        image=sr["image_url"],
+    )
 
 

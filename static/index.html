@@ -309,6 +309,34 @@ input::placeholder, textarea::placeholder { color: var(--text-muted); }
 
 .product-card .product-link:hover { background: rgba(196, 162, 101, 0.25); border-color: var(--accent); }
 
+.product-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.product-actions button {
+  padding: 6px 14px;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  font-family: var(--font);
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.product-actions button:hover { color: var(--accent); border-color: var(--accent); }
+.product-actions button:disabled { opacity: 0.4; cursor: not-allowed; }
+.product-actions button.hidden { display: none; }
+
+.product-card.refreshing .product-info { opacity: 0.4; pointer-events: none; }
+.product-card.refreshing .product-image { opacity: 0.4; }
+
 .shop-reset-row {
   text-align: center;
   padding-top: 8px;
@@ -593,6 +621,24 @@ async function sendVibe() {
   document.getElementById('vibe-send').disabled = false;
 }
 
+function buildCardHtml(item) {
+  const imgHtml = item.image
+    ? '<img class="product-image" src="' + escapeHtml(item.image) + '" alt="' + escapeHtml(item.name) + '" onerror="this.style.display=\'none\'">'
+    : '';
+  return imgHtml +
+    '<div class="product-info">' +
+    '<div class="product-brand">' + escapeHtml(item.brand) + '</div>' +
+    '<div class="product-name">' + escapeHtml(item.name) + '</div>' +
+    '<div class="product-price">' + escapeHtml(item.price) + '</div>' +
+    '<div class="product-desc">' + escapeHtml(item.description) + '</div>' +
+    '<a class="product-link" href="' + escapeHtml(item.link) + '" target="_blank" rel="noopener">Shop Now</a>' +
+    '<div class="product-actions">' +
+    '<button class="refresh-btn" title="Find alternative">\u21BB Refresh</button>' +
+    '<button class="back-btn hidden" title="Previous product">\u2190 Back</button>' +
+    '</div>' +
+    '</div>';
+}
+
 function renderProducts(vibe, items) {
   document.getElementById('shop-vibe-text').textContent = vibe;
   productGrid.innerHTML = '';
@@ -601,22 +647,91 @@ function renderProducts(vibe, items) {
     const card = document.createElement('div');
     card.className = 'product-card';
     card.style.animationDelay = (i * 0.08) + 's';
-    const imgHtml = item.image
-      ? '<img class="product-image" src="' + escapeHtml(item.image) + '" alt="' + escapeHtml(item.name) + '" onerror="this.style.display=\'none\'">'
-      : '';
-    card.innerHTML = imgHtml +
-      '<div class="product-info">' +
-      '<div class="product-brand">' + escapeHtml(item.brand) + '</div>' +
-      '<div class="product-name">' + escapeHtml(item.name) + '</div>' +
-      '<div class="product-price">' + escapeHtml(item.price) + '</div>' +
-      '<div class="product-desc">' + escapeHtml(item.description) + '</div>' +
-      '<a class="product-link" href="' + escapeHtml(item.link) + '" target="_blank" rel="noopener">Shop Now</a>' +
-      '</div>';
+
+    // Store search info and history on the card element
+    card._searchInfo = {
+      item: item.search_item || item.description,
+      brand: item.brand,
+      product: item.search_product || '',
+    };
+    card._history = [];        // previous items (for back)
+    card._currentItem = item;  // what's currently displayed
+    card._allLinks = [item.link]; // all links seen (for exclude)
+
+    card.innerHTML = buildCardHtml(item);
+
+    card.querySelector('.refresh-btn').addEventListener('click', () => refreshCard(card));
+    card.querySelector('.back-btn').addEventListener('click', () => goBackCard(card));
+
     productGrid.appendChild(card);
   });
 
   shopLoading.classList.remove('active');
   shopResults.classList.add('active');
+}
+
+async function refreshCard(card) {
+  const refreshBtn = card.querySelector('.refresh-btn');
+  const backBtn = card.querySelector('.back-btn');
+  if (refreshBtn.disabled) return;
+
+  refreshBtn.disabled = true;
+  card.classList.add('refreshing');
+
+  const profile = getUserProfile();
+  const budget = (profile && profile.budget) || '';
+
+  try {
+    const res = await fetch('/shop-refresh', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        item: card._searchInfo.item,
+        brand: card._searchInfo.brand,
+        product: card._searchInfo.product,
+        budget: budget,
+        exclude_links: card._allLinks,
+      }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || 'No alternatives found');
+    }
+    const newItem = await res.json();
+
+    // Push current item to history
+    card._history.push(card._currentItem);
+    card._currentItem = newItem;
+    card._allLinks.push(newItem.link);
+
+    // Re-render card content
+    card.innerHTML = buildCardHtml(newItem);
+    card.querySelector('.refresh-btn').addEventListener('click', () => refreshCard(card));
+    card.querySelector('.back-btn').addEventListener('click', () => goBackCard(card));
+    card.querySelector('.back-btn').classList.remove('hidden');
+  } catch (err) {
+    alert(err.message);
+  }
+
+  card.classList.remove('refreshing');
+  refreshBtn.disabled = false;
+}
+
+function goBackCard(card) {
+  if (!card._history.length) return;
+
+  const prevItem = card._history.pop();
+  card._currentItem = prevItem;
+
+  card.innerHTML = buildCardHtml(prevItem);
+  card.querySelector('.refresh-btn').addEventListener('click', () => refreshCard(card));
+  const backBtn = card.querySelector('.back-btn');
+  backBtn.addEventListener('click', () => goBackCard(card));
+  if (!card._history.length) {
+    backBtn.classList.add('hidden');
+  } else {
+    backBtn.classList.remove('hidden');
+  }
 }
 
 document.getElementById('shop-reset').addEventListener('click', () => {
