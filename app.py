@@ -544,7 +544,10 @@ async def get_vibe_recommendations(req: VibeRequest):
     """Get structured shopping recommendations based on a vibe/occasion."""
     # Phase 1: Claude determines what items are needed for the vibe
     search_query = f"outfit for {req.vibe} what to wear style"
-    context, metadatas = retrieve_context(search_query)
+    try:
+        context, metadatas = retrieve_context(search_query)
+    except Exception:
+        context, metadatas = "", []
 
     items_message = f"""Here are relevant excerpts from the Die, Workwear! blog:
 
@@ -556,16 +559,25 @@ The user wants to dress for this vibe/occasion: "{req.vibe}"
 {format_profile(req.profile)}
 Return a JSON array of 6-8 item descriptions for a complete outfit that nails this vibe. Remember: ONLY output the JSON array, nothing else."""
 
-    raw_items = ask_claude(VIBE_ITEMS_PROMPT, [{"type": "text", "text": items_message}])
+    try:
+        raw_items = ask_claude(VIBE_ITEMS_PROMPT, [{"type": "text", "text": items_message}])
+    except Exception:
+        raise HTTPException(status_code=502, detail="Style advisor is temporarily unavailable — please try again")
 
     try:
         cleaned = raw_items.strip()
+        # Strip markdown code fences if present
         if cleaned.startswith("```"):
             cleaned = cleaned.split("\n", 1)[1]
             cleaned = cleaned.rsplit("```", 1)[0]
+        # Extract JSON array even if surrounded by text
+        start = cleaned.find("[")
+        end = cleaned.rfind("]")
+        if start != -1 and end != -1:
+            cleaned = cleaned[start:end + 1]
         item_descriptions = json.loads(cleaned)
-    except (json.JSONDecodeError, IndexError):
-        raise HTTPException(status_code=502, detail="Failed to parse outfit items")
+    except (json.JSONDecodeError, IndexError, ValueError):
+        raise HTTPException(status_code=502, detail="Could not build outfit — please try again")
 
     # Phase 2: Search for real, in-stock products for each item
     budget = req.profile.budget if req.profile else ""
