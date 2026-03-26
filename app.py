@@ -389,6 +389,22 @@ RETAILERS = {
         "ghbass.com",
         "meermin.com",
     ],
+    "athletic": [
+        "reigningchamp.com",
+        "lululemon.com",
+        "tenthousand.com",
+        "outdoorvoices.com",
+        "vuoriclothing.com",
+        "rhone.com",
+        "tracksmith.com",
+        "satisfactionrunning.com",
+        "nikeacg.com",
+        "arcteryx.com",
+        "cotopaxi.com",
+        "on.com",
+        "nobullproject.com",
+        "setasports.com",
+    ],
 }
 
 ALL_RETAILERS = []
@@ -396,14 +412,27 @@ for _tier in RETAILERS.values():
     ALL_RETAILERS.extend(_tier)
 
 
-def _get_site_query(budget: str = "", n: int = 8) -> str:
+_ATHLETIC_KEYWORDS = {"gym", "workout", "running", "athletic", "athleisure",
+                       "training", "exercise", "activewear", "jogger", "sneaker",
+                       "performance", "sport", "hiking", "trail"}
+
+
+def _is_athletic_item(item_text: str) -> bool:
+    """Check if an item description suggests athletic/workout gear."""
+    words = set(item_text.lower().split())
+    return bool(words & _ATHLETIC_KEYWORDS)
+
+
+def _get_site_query(budget: str = "", n: int = 8, item_hint: str = "") -> str:
     """Build a site: OR query from a random subset of retailers.
-    Biases toward budget-friendly retailers when budget is 'budget'."""
-    if budget == "budget":
-        # Favor budget + mid tiers
+    Biases toward budget-friendly retailers when budget is 'budget',
+    and toward athletic retailers for workout/athleisure items."""
+    if _is_athletic_item(item_hint):
+        # Athletic items: heavily favor athletic retailers, mix in some general
+        pool = RETAILERS["athletic"] * 3 + RETAILERS["budget"] + RETAILERS["mid"]
+    elif budget == "budget":
         pool = RETAILERS["budget"] * 2 + RETAILERS["mid"] + RETAILERS["shoes"]
     elif budget == "luxury":
-        # Favor premium + mid tiers
         pool = RETAILERS["premium"] * 2 + RETAILERS["mid"] + RETAILERS["shoes"]
     else:
         pool = ALL_RETAILERS[:]
@@ -503,8 +532,8 @@ def search_product(item_info, budget="", exclude_links=None) -> dict:
     # Build item query (no brand bias — let the site: filter handle sourcing)
     query = f"men's {item}"
 
-    # Build site-restricted search query
-    site_filter = _get_site_query(budget)
+    # Build site-restricted search query (pass item text for athletic detection)
+    site_filter = _get_site_query(budget, item_hint=item)
 
     skip_paths = ("/blog/", "/blogs/", "/article/", "/wiki/", "/news/",
                   "/review/", "/magazine/", "/editorial/", "/guide/")
