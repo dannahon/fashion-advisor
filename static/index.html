@@ -238,11 +238,27 @@ input::placeholder { color: var(--text-muted); }
   font-weight: 500;
 }
 
+/* ── Mood board layout ────────────────────────────── */
 .product-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  grid-template-columns: 1fr 1fr 1fr;
+  grid-template-rows: auto;
+  grid-template-areas:
+    ".         outerwear  ."
+    "top       top        accessory1"
+    "bottom    bottom     accessory2"
+    "shoes     shoes      .";
   gap: 16px;
+  max-width: 780px;
+  margin: 0 auto;
 }
+
+.product-card[data-slot="outerwear"]  { grid-area: outerwear; }
+.product-card[data-slot="top"]        { grid-area: top; }
+.product-card[data-slot="bottom"]     { grid-area: bottom; }
+.product-card[data-slot="shoes"]      { grid-area: shoes; }
+.product-card.accessory-1             { grid-area: accessory1; }
+.product-card.accessory-2             { grid-area: accessory2; }
 
 .product-card {
   background: var(--bg-card);
@@ -275,6 +291,14 @@ input::placeholder { color: var(--text-muted); }
   flex-direction: column;
   gap: 4px;
   flex: 1;
+}
+
+.product-card .slot-label {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--accent);
+  opacity: 0.7;
 }
 
 .product-card .product-name {
@@ -342,11 +366,27 @@ input::placeholder { color: var(--text-muted); }
   .main-panel { padding: 16px; }
   .vibe-input-row { flex-direction: column; }
   .vibe-input-row button { width: 100%; }
-  .product-grid { grid-template-columns: 1fr 1fr; }
+  .product-grid {
+    grid-template-columns: 1fr 1fr;
+    grid-template-areas:
+      "outerwear  outerwear"
+      "top        accessory1"
+      "bottom     accessory2"
+      "shoes      shoes";
+  }
 }
 
 @media (max-width: 400px) {
-  .product-grid { grid-template-columns: 1fr; }
+  .product-grid {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "outerwear"
+      "top"
+      "bottom"
+      "shoes"
+      "accessory1"
+      "accessory2";
+  }
 }
 
 /* ── Onboarding Overlay ────────────────────────────── */
@@ -702,8 +742,10 @@ function buildCardHtml(item) {
   const imgHtml = item.image
     ? '<img class="product-image" src="' + escapeHtml(item.image) + '" alt="' + escapeHtml(item.name) + '">'
     : '';
+  const slotLabel = item.slot ? '<div class="slot-label">' + escapeHtml(item.slot) + '</div>' : '';
   return imgHtml +
     '<div class="product-info">' +
+    slotLabel +
     '<div class="product-name">' + escapeHtml(item.name) + '</div>' +
     '<div class="product-price">' + escapeHtml(item.price) + '</div>' +
     '</div>' +
@@ -736,10 +778,22 @@ function renderProducts(vibe, items) {
   document.getElementById('shop-vibe-text').textContent = vibe;
   productGrid.innerHTML = '';
 
+  let accessoryCount = 0;
+
   items.forEach((item, i) => {
     const card = document.createElement('div');
     card.className = 'product-card';
     card.style.animationDelay = (i * 0.08) + 's';
+
+    // Assign slot for mood board positioning
+    const slot = (item.slot || 'accessory').toLowerCase();
+    if (slot === 'accessory') {
+      accessoryCount++;
+      card.setAttribute('data-slot', 'accessory');
+      card.classList.add('accessory-' + Math.min(accessoryCount, 2));
+    } else {
+      card.setAttribute('data-slot', slot);
+    }
 
     card._searchInfo = {
       item: item.search_item || item.description,

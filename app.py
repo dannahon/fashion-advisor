@@ -30,6 +30,7 @@ from typing import Optional, List
 from pydantic import BaseModel
 from PIL import Image
 from serpapi import GoogleSearch
+import requests as _requests
 try:
     import pillow_heif
     pillow_heif.register_heif_opener()
@@ -99,13 +100,14 @@ You MUST respond with ONLY a valid JSON array of 6-8 objects. No markdown, no ex
 
 Each object must have:
 - "item": a specific, searchable garment or accessory description (style, color, fabric, fit). Be specific enough that searching for it on a retailer's site would find the right kind of product.
+- "slot": one of "outerwear", "top", "bottom", "shoes", or "accessory" — indicates what part of the outfit this is.
 
 Do NOT include brand names — the system will search across a curated set of retailers automatically. Focus purely on describing the right ITEMS for the vibe.
 
-Cover a full outfit: top, bottom, shoes, and 1-2 accessories.
+Cover a full outfit: outerwear (jacket/blazer/coat — skip if not needed for the vibe), top (shirt/sweater/polo), bottom (pants/shorts), shoes, and 1-2 accessories (belt, watch, sunglasses, tie, pocket square, etc).
 
 Example output:
-[{"item": "unstructured navy linen blazer"}, {"item": "white linen spread-collar shirt"}, {"item": "cream cotton chinos slim fit"}, {"item": "brown leather penny loafers"}, {"item": "navy knit silk tie"}, {"item": "white linen pocket square"}]
+[{"item": "unstructured navy linen blazer", "slot": "outerwear"}, {"item": "white linen spread-collar shirt", "slot": "top"}, {"item": "cream cotton chinos slim fit", "slot": "bottom"}, {"item": "brown leather penny loafers", "slot": "shoes"}, {"item": "navy knit silk tie", "slot": "accessory"}, {"item": "white linen pocket square", "slot": "accessory"}]
 """
 
 
@@ -324,6 +326,7 @@ class ShopItem(BaseModel):
     image: str = ""
     search_item: str = ""
     search_product: str = ""
+    slot: str = ""
 
 
 class VibeResponse(BaseModel):
@@ -420,6 +423,7 @@ def _is_category_url(url: str) -> bool:
     category_signals = (
         "/collections/", "/collection/", "/category/", "/categories/",
         "/shop/", "/search", "/browse/", "/c/", "/plp/",
+        "/buy/", "/mens-", "/womens-", "/all-",
         "?q=", "?query=", "?search=",
     )
     # URLs ending at a category level (e.g. site.com/mens/shirts)
@@ -436,6 +440,37 @@ def _is_bad_title(title: str) -> bool:
         "top 10", "top 5", "how to", "guide", "slim vs",
     )
     return any(s in lower for s in bad_signals)
+
+
+def _scrape_product_image(url: str, timeout: float = 5.0) -> str:
+    """Try to extract the product image from the actual product page.
+    Looks for og:image, twitter:image, or common product image meta tags."""
+    try:
+        resp = _requests.get(url, timeout=timeout, headers={
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
+        })
+        if resp.status_code != 200:
+            return ""
+        html = resp.text[:100_000]  # Only scan first 100KB
+
+        # Try og:image first (most reliable for product pages)
+        for pattern in [
+            r'<meta\s+property=["\']og:image["\']\s+content=["\'](https?://[^"\']+)["\']',
+            r'<meta\s+content=["\'](https?://[^"\']+)["\']\s+property=["\']og:image["\']',
+            r'<meta\s+name=["\']twitter:image["\']\s+content=["\'](https?://[^"\']+)["\']',
+            r'<meta\s+content=["\'](https?://[^"\']+)["\']\s+name=["\']twitter:image["\']',
+        ]:
+            m = _re.search(pattern, html, _re.IGNORECASE)
+            if m:
+                img_url = m.group(1)
+                # Skip placeholder/logo images
+                lower = img_url.lower()
+                if any(s in lower for s in ("logo", "favicon", "placeholder", "1x1", "pixel")):
+                    continue
+                return img_url
+        return ""
+    except Exception:
+        return ""
 
 
 def search_product(item_info, budget="", exclude_links=None) -> dict:
@@ -515,30 +550,32 @@ def search_product(item_info, budget="", exclude_links=None) -> dict:
     except Exception:
         pass
 
-    # Image search for product photo
+    # Image: try scraping OG image from the product page first (ensures match)
     if result["link"]:
-        try:
-            # Search specifically for the product to get a clean product image
-            img_query = f"{brand} {product or item}" if brand else item
-            img_search = GoogleSearch({
-                "engine": "google_images",
-                "q": f"{img_query} product photo",
-                "api_key": SERPAPI_KEY,
-                "num": 5,
-            })
-            img_data = img_search.get_dict()
-            for img in img_data.get("images_results", []):
-                img_url = img.get("original", "") or img.get("thumbnail", "")
-                if not img_url:
-                    continue
-                # Skip images from bad sources
-                img_lower = img_url.lower()
-                if any(d in img_lower for d in ("pinterest.", "reddit.", "youtube.", "wikimedia.")):
-                    continue
-                result["image_url"] = img_url
-                break
-        except Exception:
-            pass
+        result["image_url"] = _scrape_product_image(result["link"])
+
+        # Fallback: Google Images search if scraping failed
+        if not result["image_url"]:
+            try:
+                img_query = f"{brand} {product or item}" if brand else item
+                img_search = GoogleSearch({
+                    "engine": "google_images",
+                    "q": f"{img_query} product photo",
+                    "api_key": SERPAPI_KEY,
+                    "num": 5,
+                })
+                img_data = img_search.get_dict()
+                for img in img_data.get("images_results", []):
+                    img_url = img.get("original", "") or img.get("thumbnail", "")
+                    if not img_url:
+                        continue
+                    img_lower = img_url.lower()
+                    if any(d in img_lower for d in ("pinterest.", "reddit.", "youtube.", "wikimedia.")):
+                        continue
+                    result["image_url"] = img_url
+                    break
+            except Exception:
+                pass
 
     return result
 
@@ -730,8 +767,10 @@ Return a JSON array of 6-8 item descriptions for a complete outfit that nails th
             continue
         if isinstance(item_info, str):
             s_item = item_info
+            slot = "accessory"
         else:
             s_item = item_info.get("item", "")
+            slot = item_info.get("slot", "accessory")
 
         items.append(ShopItem(
             name=sr["title"],
@@ -742,6 +781,7 @@ Return a JSON array of 6-8 item descriptions for a complete outfit that nails th
             image=sr["image_url"],
             search_item=s_item,
             search_product="",
+            slot=slot,
         ))
 
     return VibeResponse(vibe=req.vibe, items=items)
