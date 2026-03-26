@@ -333,6 +333,45 @@ class VibeResponse(BaseModel):
     items: List[ShopItem]
 
 
+import re as _re
+
+def _extract_dollar_price(text: str) -> str:
+    """Extract a clean dollar price from text like '$155.00', '£120', 'From $99', etc."""
+    m = _re.search(r'\$\s*(\d[\d,]*(?:\.\d{2})?)', text)
+    if m:
+        raw = m.group(1).replace(",", "")
+        try:
+            val = float(raw)
+            return f"${val:,.0f}" if val == int(val) else f"${val:,.2f}"
+        except ValueError:
+            pass
+    return ""
+
+
+def _is_category_url(url: str) -> bool:
+    """Check if a URL looks like a category/collection page rather than a product page."""
+    lower = url.lower()
+    category_signals = (
+        "/collections/", "/collection/", "/category/", "/categories/",
+        "/shop/", "/search", "/browse/", "/c/", "/plp/",
+        "?q=", "?query=", "?search=",
+    )
+    # URLs ending at a category level (e.g. site.com/mens/shirts)
+    if any(s in lower for s in category_signals):
+        return True
+    return False
+
+
+def _is_bad_title(title: str) -> bool:
+    """Check if a search result title suggests a non-product page."""
+    lower = title.lower()
+    bad_signals = (
+        " vs ", " versus ", "comparison", "review:", "best ",
+        "top 10", "top 5", "how to", "guide", "slim vs",
+    )
+    return any(s in lower for s in bad_signals)
+
+
 def search_product(item_info, budget="", exclude_links=None) -> dict:
     """Search for a real, in-stock product using SerpAPI Google organic + images."""
     if exclude_links is None:
@@ -359,7 +398,8 @@ def search_product(item_info, budget="", exclude_links=None) -> dict:
 
     skip_domains = ("poshmark.com", "ebay.", "etsy.com", "pinterest.", "reddit.com",
                     "youtube.com", "facebook.com", "instagram.com", "twitter.com",
-                    "wikipedia.org", "tiktok.com", "therealreal.com", "grailed.com")
+                    "wikipedia.org", "tiktok.com", "therealreal.com", "grailed.com",
+                    "amazon.com")
     skip_paths = ("/blog/", "/blogs/", "/article/", "/wiki/", "/news/",
                   "/review/", "/magazine/", "/editorial/", "/guide/")
 
@@ -372,10 +412,12 @@ def search_product(item_info, budget="", exclude_links=None) -> dict:
             "q": f"{query} buy",
             "api_key": SERPAPI_KEY,
             "num": 15,
+            "gl": "us",
         })
         data = search.get_dict()
         for r in data.get("organic_results", []):
             link = r.get("link", "")
+            title = r.get("title", "")
             lower = link.lower()
             if link in exclude_set:
                 continue
@@ -385,41 +427,63 @@ def search_product(item_info, budget="", exclude_links=None) -> dict:
                 continue
             if lower.rstrip("/").count("/") <= 2:
                 continue
-            result["title"] = r.get("title", "")
-            result["link"] = link
-            # Extract price from rich_snippet
+            if _is_category_url(lower):
+                continue
+            if _is_bad_title(title):
+                continue
+
+            # Extract price
+            price = ""
             rich = r.get("rich_snippet") or {}
             bottom = rich.get("bottom") or {}
             exts = bottom.get("detected_extensions") or {}
-            currency = exts.get("currency", "$")
             if exts.get("price"):
-                result["price"] = f"{currency}{exts['price']:g}"
+                price = f"${exts['price']:g}"
             elif exts.get("price_from"):
-                result["price"] = f"{currency}{exts['price_from']:g}"
+                price = f"${exts['price_from']:g}"
             else:
                 # Fallback: parse first $XX from extensions list
                 for ext_str in (bottom.get("extensions") or []):
-                    if "$" in ext_str:
-                        result["price"] = ext_str.split(" to ")[0].split(",")[0].strip()
+                    extracted = _extract_dollar_price(ext_str)
+                    if extracted:
+                        price = extracted
                         break
+
+            # Skip results without a clear dollar price
+            if not price or not price.startswith("$"):
+                continue
+
+            result["title"] = title
+            result["link"] = link
+            result["price"] = price
             break
     except Exception:
         pass
 
     # Image search for product photo
-    try:
-        img_search = GoogleSearch({
-            "engine": "google_images",
-            "q": query,
-            "api_key": SERPAPI_KEY,
-            "num": 1,
-        })
-        img_data = img_search.get_dict()
-        imgs = img_data.get("images_results", [])
-        if imgs:
-            result["image_url"] = imgs[0].get("thumbnail", "") or imgs[0].get("original", "")
-    except Exception:
-        pass
+    if result["link"]:
+        try:
+            # Search specifically for the product to get a clean product image
+            img_query = f"{brand} {product or item}" if brand else item
+            img_search = GoogleSearch({
+                "engine": "google_images",
+                "q": f"{img_query} product photo",
+                "api_key": SERPAPI_KEY,
+                "num": 5,
+            })
+            img_data = img_search.get_dict()
+            for img in img_data.get("images_results", []):
+                img_url = img.get("thumbnail", "") or img.get("original", "")
+                if not img_url:
+                    continue
+                # Skip images from bad sources
+                img_lower = img_url.lower()
+                if any(d in img_lower for d in ("pinterest.", "reddit.", "youtube.", "wikimedia.")):
+                    continue
+                result["image_url"] = img_url
+                break
+        except Exception:
+            pass
 
     return result
 
@@ -607,7 +671,7 @@ Return a JSON array of 6-8 item descriptions for a complete outfit that nails th
     # Build ShopItems directly from search results (no Phase 3 needed — SerpAPI results are structured)
     items = []
     for item_info, sr in zip(item_descriptions, search_results):
-        if not sr["link"]:
+        if not sr["link"] or not sr.get("price"):
             continue
         if isinstance(item_info, str):
             brand = ""
@@ -622,7 +686,7 @@ Return a JSON array of 6-8 item descriptions for a complete outfit that nails th
         items.append(ShopItem(
             name=sr["title"],
             brand=brand,
-            price=sr.get("price", "") or "See site",
+            price=sr["price"],
             link=sr["link"],
             description=description,
             image=sr["image_url"],
@@ -641,12 +705,12 @@ async def refresh_product(req: RefreshRequest):
     sr = await loop.run_in_executor(
         _executor, search_product, item_info, req.budget, req.exclude_links
     )
-    if not sr["link"]:
+    if not sr["link"] or not sr.get("price"):
         raise HTTPException(status_code=404, detail="No more alternatives found")
     return ShopItem(
         name=sr["title"],
         brand=req.brand,
-        price=sr.get("price", "") or "See site",
+        price=sr["price"],
         link=sr["link"],
         description=req.item,
         image=sr["image_url"],

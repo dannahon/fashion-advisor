@@ -46,30 +46,20 @@ header h1 {
   margin-bottom: 4px;
 }
 
-header p {
-  font-size: 0.82rem;
-  color: var(--text-muted);
-  margin-bottom: 16px;
-}
-
 /* ── Main panel ────────────────────────────────────── */
 .main-panel {
   flex: 1;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
+  align-items: center;
+  padding: 24px;
 }
 
 /* ── Animations ────────────────────────────────────── */
 @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 
-@keyframes bounce {
-  0%, 60%, 100% { transform: translateY(0); }
-  30% { transform: translateY(-6px); }
-}
-
-
-input, textarea {
+input {
   flex: 1;
   padding: 12px 16px;
   background: var(--bg-input);
@@ -82,13 +72,8 @@ input, textarea {
   transition: border-color 0.2s;
 }
 
-input:focus, textarea:focus { border-color: var(--accent); }
-input::placeholder, textarea::placeholder { color: var(--text-muted); }
-
-.dots { display: flex; gap: 5px; }
-.dots span { width: 7px; height: 7px; background: var(--text-muted); border-radius: 50%; animation: bounce 1.4s infinite; }
-.dots span:nth-child(2) { animation-delay: 0.2s; }
-.dots span:nth-child(3) { animation-delay: 0.4s; }
+input:focus { border-color: var(--accent); }
+input::placeholder { color: var(--text-muted); }
 
 .reset-btn {
   padding: 10px 28px;
@@ -107,10 +92,6 @@ input::placeholder, textarea::placeholder { color: var(--text-muted); }
 /* ════════════════════════════════════════════════════════
    SHOP (Vibe-based discovery)
    ════════════════════════════════════════════════════════ */
-.main-panel {
-  align-items: center;
-  padding: 24px;
-}
 
 /* State: input */
 .shop-input-zone {
@@ -194,12 +175,37 @@ input::placeholder, textarea::placeholder { color: var(--text-muted); }
   display: none;
   flex-direction: column;
   align-items: center;
-  gap: 16px;
+  gap: 24px;
   margin: auto;
+  padding-top: 40px;
 }
 
 .shop-loading.active { display: flex; }
-.shop-loading .loading-text { font-size: 0.95rem; color: var(--text-muted); }
+.shop-loading .loading-text {
+  font-size: 0.95rem;
+  color: var(--text-muted);
+  margin-top: 8px;
+}
+
+/* ── Dressing stick figure animation ──────────────── */
+.dressing-figure {
+  width: 120px;
+  height: 180px;
+}
+
+.dressing-figure .body-parts { stroke: var(--text-muted); stroke-width: 2; stroke-linecap: round; fill: none; }
+.dressing-figure .clothing { stroke: var(--accent); stroke-width: 2.5; stroke-linecap: round; fill: none; opacity: 0; }
+
+@keyframes clothFade {
+  0%, 15% { opacity: 0; }
+  25%, 100% { opacity: 1; }
+}
+
+.dressing-figure .pants   { animation: clothFade 6s ease infinite; }
+.dressing-figure .shirt   { animation: clothFade 6s ease 1s infinite; }
+.dressing-figure .shoes   { animation: clothFade 6s ease 2s infinite; }
+.dressing-figure .jacket  { animation: clothFade 6s ease 3s infinite; }
+.dressing-figure .hat     { animation: clothFade 6s ease 4s infinite; }
 
 /* State: results */
 .shop-results {
@@ -234,7 +240,7 @@ input::placeholder, textarea::placeholder { color: var(--text-muted); }
 
 .product-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
   gap: 16px;
 }
 
@@ -247,95 +253,79 @@ input::placeholder, textarea::placeholder { color: var(--text-muted); }
   flex-direction: column;
   transition: all 0.2s;
   animation: fadeIn 0.4s ease;
+  cursor: pointer;
+  text-decoration: none;
+  color: inherit;
+  position: relative;
 }
 
 .product-card:hover { border-color: var(--accent); transform: translateY(-2px); }
 
 .product-card .product-image {
   width: 100%;
-  height: 200px;
+  height: 220px;
   object-fit: cover;
   background: var(--bg-input);
   display: block;
 }
 
 .product-card .product-info {
-  padding: 16px;
+  padding: 14px 16px 12px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 4px;
   flex: 1;
-}
-
-.product-card .product-brand {
-  font-size: 0.72rem;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
 }
 
 .product-card .product-name {
-  font-size: 0.95rem;
+  font-size: 0.88rem;
   font-weight: 600;
   color: var(--text);
   line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .product-card .product-price {
-  font-size: 0.88rem;
+  font-size: 0.92rem;
   color: var(--accent);
   font-weight: 600;
 }
 
-.product-card .product-desc {
-  font-size: 0.82rem;
-  color: var(--text-muted);
-  line-height: 1.5;
-  flex: 1;
-}
-
-.product-card .product-link {
-  display: inline-block;
-  padding: 8px 18px;
-  background: var(--accent-dim);
-  border: 1px solid rgba(196, 162, 101, 0.3);
-  border-radius: 20px;
-  color: var(--accent);
-  font-size: 0.82rem;
-  text-decoration: none;
-  text-align: center;
-  transition: all 0.2s;
-}
-
-.product-card .product-link:hover { background: rgba(196, 162, 101, 0.25); border-color: var(--accent); }
-
-.product-actions {
+/* ── Heart / Skip actions ─────────────────────────── */
+.card-actions {
   display: flex;
-  gap: 8px;
-  margin-top: 4px;
+  justify-content: center;
+  gap: 20px;
+  padding: 0 16px 14px;
 }
 
-.product-actions button {
-  padding: 6px 14px;
-  border-radius: 16px;
+.card-actions button {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
   border: 1px solid var(--border);
   background: transparent;
-  color: var(--text-muted);
-  font-size: 0.78rem;
-  font-family: var(--font);
   cursor: pointer;
   transition: all 0.2s;
   display: flex;
   align-items: center;
-  gap: 4px;
+  justify-content: center;
+  font-size: 1.1rem;
 }
 
-.product-actions button:hover { color: var(--accent); border-color: var(--accent); }
-.product-actions button:disabled { opacity: 0.4; cursor: not-allowed; }
-.product-actions button.hidden { display: none; }
+.card-actions .skip-btn { color: var(--text-muted); }
+.card-actions .skip-btn:hover { color: #e85d5d; border-color: #e85d5d; background: rgba(232, 93, 93, 0.1); }
 
-.product-card.refreshing .product-info { opacity: 0.4; pointer-events: none; }
-.product-card.refreshing .product-image { opacity: 0.4; }
+.card-actions .save-btn { color: var(--text-muted); }
+.card-actions .save-btn:hover { color: #e85d75; border-color: #e85d75; background: rgba(232, 93, 117, 0.1); }
+.card-actions .save-btn.saved { color: #e85d75; border-color: #e85d75; background: rgba(232, 93, 117, 0.15); }
+
+.product-card.refreshing .product-info,
+.product-card.refreshing .product-image,
+.product-card.refreshing .card-actions { opacity: 0.3; pointer-events: none; }
 
 .shop-reset-row {
   text-align: center;
@@ -352,6 +342,10 @@ input::placeholder, textarea::placeholder { color: var(--text-muted); }
   .main-panel { padding: 16px; }
   .vibe-input-row { flex-direction: column; }
   .vibe-input-row button { width: 100%; }
+  .product-grid { grid-template-columns: 1fr 1fr; }
+}
+
+@media (max-width: 400px) {
   .product-grid { grid-template-columns: 1fr; }
 }
 
@@ -546,8 +540,39 @@ input::placeholder, textarea::placeholder { color: var(--text-muted); }
 
   <!-- Loading state -->
   <div class="shop-loading" id="shop-loading">
-    <div class="loading-text">Curating your look...</div>
-    <div class="dots"><span></span><span></span><span></span></div>
+    <svg class="dressing-figure" viewBox="0 0 120 180">
+      <!-- Stick figure body -->
+      <g class="body-parts">
+        <circle cx="60" cy="22" r="12"/><!-- head -->
+        <line x1="60" y1="34" x2="60" y2="90"/><!-- torso -->
+        <line x1="60" y1="90" x2="40" y2="140"/><!-- left leg -->
+        <line x1="60" y1="90" x2="80" y2="140"/><!-- right leg -->
+        <line x1="60" y1="52" x2="30" y2="75"/><!-- left arm -->
+        <line x1="60" y1="52" x2="90" y2="75"/><!-- right arm -->
+      </g>
+      <!-- Clothing items that fade in one by one -->
+      <g class="clothing pants">
+        <line x1="60" y1="88" x2="42" y2="138" stroke-width="6"/>
+        <line x1="60" y1="88" x2="78" y2="138" stroke-width="6"/>
+      </g>
+      <g class="clothing shirt">
+        <rect x="48" y="38" width="24" height="48" rx="4" fill="none" stroke-width="2.5"/>
+        <line x1="60" y1="52" x2="32" y2="73" stroke-width="5"/>
+        <line x1="60" y1="52" x2="88" y2="73" stroke-width="5"/>
+      </g>
+      <g class="clothing shoes">
+        <ellipse cx="40" cy="144" rx="10" ry="5"/>
+        <ellipse cx="80" cy="144" rx="10" ry="5"/>
+      </g>
+      <g class="clothing jacket">
+        <rect x="44" y="40" width="32" height="50" rx="6" fill="none" stroke-width="2"/>
+      </g>
+      <g class="clothing hat">
+        <ellipse cx="60" cy="12" rx="18" ry="6"/>
+        <rect x="50" y="4" width="20" height="10" rx="4" fill="none"/>
+      </g>
+    </svg>
+    <div class="loading-text">Putting together your look...</div>
   </div>
 
   <!-- Results state -->
@@ -567,6 +592,29 @@ input::placeholder, textarea::placeholder { color: var(--text-muted); }
 // ── Shared utilities ────────────────────────────────────
 function escapeHtml(str) {
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+// ── Saved pieces (localStorage) ─────────────────────────
+function getSavedPieces() {
+  try { return JSON.parse(localStorage.getItem('savedPieces') || '[]'); }
+  catch { return []; }
+}
+
+function savePiece(item) {
+  const saved = getSavedPieces();
+  if (!saved.some(s => s.link === item.link)) {
+    saved.push(item);
+    localStorage.setItem('savedPieces', JSON.stringify(saved));
+  }
+}
+
+function unsavePiece(link) {
+  const saved = getSavedPieces().filter(s => s.link !== link);
+  localStorage.setItem('savedPieces', JSON.stringify(saved));
+}
+
+function isPieceSaved(link) {
+  return getSavedPieces().some(s => s.link === link);
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -611,7 +659,6 @@ async function sendVibe() {
     const data = await res.json();
     renderProducts(data.vibe, data.items);
   } catch (err) {
-    // Show error and go back to input
     shopLoading.classList.remove('active');
     shopInputZone.classList.remove('hidden');
     alert('Could not get recommendations: ' + err.message);
@@ -622,21 +669,34 @@ async function sendVibe() {
 }
 
 function buildCardHtml(item) {
+  const saved = isPieceSaved(item.link);
   const imgHtml = item.image
     ? '<img class="product-image" src="' + escapeHtml(item.image) + '" alt="' + escapeHtml(item.name) + '" onerror="this.style.display=\'none\'">'
     : '';
   return imgHtml +
     '<div class="product-info">' +
-    '<div class="product-brand">' + escapeHtml(item.brand) + '</div>' +
     '<div class="product-name">' + escapeHtml(item.name) + '</div>' +
     '<div class="product-price">' + escapeHtml(item.price) + '</div>' +
-    '<div class="product-desc">' + escapeHtml(item.description) + '</div>' +
-    '<a class="product-link" href="' + escapeHtml(item.link) + '" target="_blank" rel="noopener">Shop Now</a>' +
-    '<div class="product-actions">' +
-    '<button class="refresh-btn" title="Find alternative">\u21BB Refresh</button>' +
-    '<button class="back-btn hidden" title="Previous product">\u2190 Back</button>' +
     '</div>' +
+    '<div class="card-actions">' +
+    '<button class="skip-btn" title="Skip &mdash; find another">' +
+    '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78L12 21.23l8.84-8.84a5.5 5.5 0 0 0 0-7.78z"/><line x1="4" y1="4" x2="20" y2="20"/></svg>' +
+    '</button>' +
+    '<button class="save-btn' + (saved ? ' saved' : '') + '" title="' + (saved ? 'Unsave' : 'Save this piece') + '">' +
+    '<svg width="18" height="18" viewBox="0 0 24 24" ' + (saved ? 'fill="currentColor"' : 'fill="none"') + ' stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78L12 21.23l8.84-8.84a5.5 5.5 0 0 0 0-7.78z"/></svg>' +
+    '</button>' +
     '</div>';
+}
+
+function wireCardActions(card) {
+  card.querySelector('.skip-btn').addEventListener('click', (e) => {
+    e.stopPropagation();
+    refreshCard(card);
+  });
+  card.querySelector('.save-btn').addEventListener('click', (e) => {
+    e.stopPropagation();
+    toggleSave(card);
+  });
 }
 
 function renderProducts(vibe, items) {
@@ -648,21 +708,22 @@ function renderProducts(vibe, items) {
     card.className = 'product-card';
     card.style.animationDelay = (i * 0.08) + 's';
 
-    // Store search info and history on the card element
     card._searchInfo = {
       item: item.search_item || item.description,
       brand: item.brand,
       product: item.search_product || '',
     };
-    card._history = [];        // previous items (for back)
-    card._currentItem = item;  // what's currently displayed
-    card._allLinks = [item.link]; // all links seen (for exclude)
+    card._currentItem = item;
+    card._allLinks = [item.link];
 
     card.innerHTML = buildCardHtml(item);
 
-    card.querySelector('.refresh-btn').addEventListener('click', () => refreshCard(card));
-    card.querySelector('.back-btn').addEventListener('click', () => goBackCard(card));
+    // Click card to open product link
+    card.addEventListener('click', () => {
+      window.open(card._currentItem.link, '_blank', 'noopener');
+    });
 
+    wireCardActions(card);
     productGrid.appendChild(card);
   });
 
@@ -670,12 +731,27 @@ function renderProducts(vibe, items) {
   shopResults.classList.add('active');
 }
 
-async function refreshCard(card) {
-  const refreshBtn = card.querySelector('.refresh-btn');
-  const backBtn = card.querySelector('.back-btn');
-  if (refreshBtn.disabled) return;
+function toggleSave(card) {
+  const item = card._currentItem;
+  const btn = card.querySelector('.save-btn');
+  if (isPieceSaved(item.link)) {
+    unsavePiece(item.link);
+    btn.classList.remove('saved');
+    btn.title = 'Save this piece';
+    btn.querySelector('svg').setAttribute('fill', 'none');
+  } else {
+    savePiece(item);
+    btn.classList.add('saved');
+    btn.title = 'Unsave';
+    btn.querySelector('svg').setAttribute('fill', 'currentColor');
+  }
+}
 
-  refreshBtn.disabled = true;
+async function refreshCard(card) {
+  const skipBtn = card.querySelector('.skip-btn');
+  if (skipBtn.disabled) return;
+
+  skipBtn.disabled = true;
   card.classList.add('refreshing');
 
   const profile = getUserProfile();
@@ -699,39 +775,16 @@ async function refreshCard(card) {
     }
     const newItem = await res.json();
 
-    // Push current item to history
-    card._history.push(card._currentItem);
     card._currentItem = newItem;
     card._allLinks.push(newItem.link);
 
-    // Re-render card content
     card.innerHTML = buildCardHtml(newItem);
-    card.querySelector('.refresh-btn').addEventListener('click', () => refreshCard(card));
-    card.querySelector('.back-btn').addEventListener('click', () => goBackCard(card));
-    card.querySelector('.back-btn').classList.remove('hidden');
+    wireCardActions(card);
   } catch (err) {
-    alert(err.message);
+    // silently keep current card if no alternatives
   }
 
   card.classList.remove('refreshing');
-  refreshBtn.disabled = false;
-}
-
-function goBackCard(card) {
-  if (!card._history.length) return;
-
-  const prevItem = card._history.pop();
-  card._currentItem = prevItem;
-
-  card.innerHTML = buildCardHtml(prevItem);
-  card.querySelector('.refresh-btn').addEventListener('click', () => refreshCard(card));
-  const backBtn = card.querySelector('.back-btn');
-  backBtn.addEventListener('click', () => goBackCard(card));
-  if (!card._history.length) {
-    backBtn.classList.add('hidden');
-  } else {
-    backBtn.classList.remove('hidden');
-  }
 }
 
 document.getElementById('shop-reset').addEventListener('click', () => {
@@ -788,7 +841,6 @@ document.getElementById('ob-skip').addEventListener('click', () => {
 document.getElementById('edit-profile').addEventListener('click', () => {
   const profile = getUserProfile();
   if (profile) {
-    // Pre-fill values
     document.getElementById('ob-height').value = profile.height || '';
     document.querySelectorAll('#ob-build .pill').forEach(p => {
       p.classList.toggle('selected', p.dataset.val === profile.build);
