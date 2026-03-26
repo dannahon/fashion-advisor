@@ -530,12 +530,7 @@ input::placeholder { color: var(--text-muted); }
       <input type="text" id="vibe-input" placeholder="Ranch wedding in Texas...">
       <button id="vibe-send">Find Looks</button>
     </div>
-    <div class="vibe-examples">
-      <button class="vibe-chip" data-v="Smart casual Friday in NYC">Smart casual Friday</button>
-      <button class="vibe-chip" data-v="Beach wedding in Positano">Beach wedding</button>
-      <button class="vibe-chip" data-v="First date at a cocktail bar">Cocktail bar date</button>
-      <button class="vibe-chip" data-v="Old money country club weekend">Country club weekend</button>
-    </div>
+    <div class="vibe-examples" id="vibe-examples"></div>
   </div>
 
   <!-- Loading state -->
@@ -617,6 +612,47 @@ function isPieceSaved(link) {
   return getSavedPieces().some(s => s.link === link);
 }
 
+// ── Randomized prompt suggestions ────────────────────────
+const ALL_PROMPTS = [
+  { label: "Smart casual Friday", vibe: "Smart casual Friday in NYC" },
+  { label: "Beach wedding", vibe: "Beach wedding in Positano" },
+  { label: "Cocktail bar date", vibe: "First date at a cocktail bar" },
+  { label: "Country club weekend", vibe: "Old money country club weekend" },
+  { label: "Job interview", vibe: "Job interview at a creative agency" },
+  { label: "Fall in New England", vibe: "Weekend in New England in October" },
+  { label: "Rooftop party", vibe: "Summer rooftop party in downtown LA" },
+  { label: "Gallery opening", vibe: "Art gallery opening in Chelsea" },
+  { label: "European vacation", vibe: "Walking around Rome in summer" },
+  { label: "Sunday brunch", vibe: "Upscale brunch spot in Brooklyn" },
+  { label: "Vineyard tour", vibe: "Wine tasting in Napa Valley" },
+  { label: "Ski lodge evening", vibe: "Apres-ski drinks at a mountain lodge" },
+  { label: "Outdoor concert", vibe: "Outdoor concert on a warm evening" },
+  { label: "Business casual", vibe: "Business casual in a modern office" },
+  { label: "Rehearsal dinner", vibe: "Rehearsal dinner at a nice restaurant" },
+  { label: "Hamptons weekend", vibe: "Casual weekend in the Hamptons" },
+  { label: "Coffee date", vibe: "Casual coffee date on a Saturday" },
+  { label: "Boat day", vibe: "Day on a friend's boat in Miami" },
+];
+
+function renderPromptChips() {
+  const container = document.getElementById('vibe-examples');
+  const shuffled = ALL_PROMPTS.sort(() => Math.random() - 0.5);
+  const picks = shuffled.slice(0, 4);
+  container.innerHTML = '';
+  picks.forEach(p => {
+    const btn = document.createElement('button');
+    btn.className = 'vibe-chip';
+    btn.textContent = p.label;
+    btn.addEventListener('click', () => {
+      vibeInput.value = p.vibe;
+      sendVibe();
+    });
+    container.appendChild(btn);
+  });
+}
+
+renderPromptChips();
+
 // ═══════════════════════════════════════════════════════════
 // SHOP
 // ═══════════════════════════════════════════════════════════
@@ -626,13 +662,6 @@ const shopResults = document.getElementById('shop-results');
 const vibeInput = document.getElementById('vibe-input');
 const productGrid = document.getElementById('product-grid');
 let shopBusy = false;
-
-document.querySelectorAll('.vibe-chip').forEach(chip => {
-  chip.addEventListener('click', () => {
-    vibeInput.value = chip.dataset.v;
-    sendVibe();
-  });
-});
 
 document.getElementById('vibe-send').addEventListener('click', sendVibe);
 vibeInput.addEventListener('keydown', e => { if (e.key === 'Enter') sendVibe(); });
@@ -796,6 +825,7 @@ document.getElementById('shop-reset').addEventListener('click', () => {
   shopInputZone.classList.remove('hidden');
   vibeInput.value = '';
   productGrid.innerHTML = '';
+  renderPromptChips();
 });
 
 // ═══════════════════════════════════════════════════════════

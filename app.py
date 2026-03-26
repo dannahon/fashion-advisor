@@ -361,6 +361,9 @@ RETAILERS = {
         "mrporter.com",
         "nomanwalksalone.com",
         "bergbergstore.com",
+        "saksfifthavenue.com",
+        "endclothing.com",
+        "ssense.com",
     ],
     "shoes": [
         "grantstoneshoes.com",
