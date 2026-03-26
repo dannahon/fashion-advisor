@@ -98,16 +98,14 @@ You are helping a user shop for a complete outfit based on a vibe or occasion th
 You MUST respond with ONLY a valid JSON array of 6-8 objects. No markdown, no explanation, no preamble — just the JSON array.
 
 Each object must have:
-- "item": a specific garment or accessory description (style, color, fabric, fit)
-- "brand": a specific brand that makes a great version of this item
-- "product": if you know a specific product name from that brand, include it (e.g. "Ludlow Slim-Fit Suit Jacket"). Otherwise leave empty string.
+- "item": a specific, searchable garment or accessory description (style, color, fabric, fit). Be specific enough that searching for it on a retailer's site would find the right kind of product.
 
-These will be used to search for real, currently available products, so be specific. Use brands with strong online retail presence — J.Crew, Todd Snyder, Suitsupply, Sid Mashburn, Drake's, Percival, Spier & Mackay, Uniqlo, Bonobos, etc.
+Do NOT include brand names — the system will search across a curated set of retailers automatically. Focus purely on describing the right ITEMS for the vibe.
 
-Cover a full outfit: top, bottom, shoes, and 1-2 accessories. Mix price points.
+Cover a full outfit: top, bottom, shoes, and 1-2 accessories.
 
 Example output:
-[{"item": "unstructured navy linen blazer", "brand": "Boglioli", "product": "K-Jacket"}, {"item": "white linen spread-collar shirt", "brand": "Proper Cloth", "product": ""}, {"item": "cream cotton chinos slim fit", "brand": "Bonobos", "product": "Stretch Washed Chino"}]
+[{"item": "unstructured navy linen blazer"}, {"item": "white linen spread-collar shirt"}, {"item": "cream cotton chinos slim fit"}, {"item": "brown leather penny loafers"}, {"item": "navy knit silk tie"}, {"item": "white linen pocket square"}]
 """
 
 
@@ -334,6 +332,71 @@ class VibeResponse(BaseModel):
 
 
 import re as _re
+import random as _random
+
+# ── Curated retailer list ─────────────────────────────────────────────────────
+# Organized by price tier. search_product picks a random subset per query
+# to ensure variety across recommendations.
+RETAILERS = {
+    "budget": [
+        "uniqlo.com",
+        "jcrew.com",
+        "bananarepublic.com",
+        "abercrombie.com",
+        "cosstores.com",
+    ],
+    "mid": [
+        "toddsnyder.com",
+        "bonobos.com",
+        "spiermackay.com",
+        "percivalclo.com",
+        "alexmill.com",
+        "us.sandro-paris.com",
+        "theory.com",
+    ],
+    "premium": [
+        "drakes.com",
+        "sidmashburn.com",
+        "jamesperse.com",
+        "mrporter.com",
+        "nomanwalksalone.com",
+        "bergbergstore.com",
+    ],
+    "shoes": [
+        "grantstoneshoes.com",
+        "aldenshop.com",
+        "paraboot.com",
+        "ghbass.com",
+        "meermin.com",
+    ],
+}
+
+ALL_RETAILERS = []
+for _tier in RETAILERS.values():
+    ALL_RETAILERS.extend(_tier)
+
+
+def _get_site_query(budget: str = "", n: int = 8) -> str:
+    """Build a site: OR query from a random subset of retailers.
+    Biases toward budget-friendly retailers when budget is 'budget'."""
+    if budget == "budget":
+        # Favor budget + mid tiers
+        pool = RETAILERS["budget"] * 2 + RETAILERS["mid"] + RETAILERS["shoes"]
+    elif budget == "luxury":
+        # Favor premium + mid tiers
+        pool = RETAILERS["premium"] * 2 + RETAILERS["mid"] + RETAILERS["shoes"]
+    else:
+        pool = ALL_RETAILERS[:]
+
+    subset = _random.sample(pool, min(n, len(pool)))
+    # Deduplicate while preserving order
+    seen = set()
+    unique = []
+    for s in subset:
+        if s not in seen:
+            seen.add(s)
+            unique.append(s)
+    return " OR ".join(f"site:{s}" for s in unique)
 
 def _extract_dollar_price(text: str) -> str:
     """Extract a clean dollar price from text like '$155.00', '£120', 'From $99', etc."""
@@ -385,21 +448,12 @@ def search_product(item_info, budget="", exclude_links=None) -> dict:
         brand = item_info.get("brand", "")
         product = item_info.get("product", "")
 
-    if product and brand:
-        query = f"{brand} {product} men's"
-    elif brand:
-        query = f"{brand} {item} men's"
-    else:
-        query = f"men's {item}"
+    # Build item query (no brand bias — let the site: filter handle sourcing)
+    query = f"men's {item}"
 
-    # Add price hint based on budget (gentle nudge, not hard filter)
-    if budget == "budget":
-        query += " affordable"
+    # Build site-restricted search query
+    site_filter = _get_site_query(budget)
 
-    skip_domains = ("poshmark.com", "ebay.", "etsy.com", "pinterest.", "reddit.com",
-                    "youtube.com", "facebook.com", "instagram.com", "twitter.com",
-                    "wikipedia.org", "tiktok.com", "therealreal.com", "grailed.com",
-                    "amazon.com")
     skip_paths = ("/blog/", "/blogs/", "/article/", "/wiki/", "/news/",
                   "/review/", "/magazine/", "/editorial/", "/guide/")
 
@@ -409,7 +463,7 @@ def search_product(item_info, budget="", exclude_links=None) -> dict:
     try:
         search = GoogleSearch({
             "engine": "google",
-            "q": f"{query} buy",
+            "q": f"{query} ({site_filter})",
             "api_key": SERPAPI_KEY,
             "num": 15,
             "gl": "us",
@@ -420,8 +474,6 @@ def search_product(item_info, budget="", exclude_links=None) -> dict:
             title = r.get("title", "")
             lower = link.lower()
             if link in exclude_set:
-                continue
-            if any(d in lower for d in skip_domains):
                 continue
             if any(p in lower for p in skip_paths):
                 continue
@@ -668,30 +720,25 @@ Return a JSON array of 6-8 item descriptions for a complete outfit that nails th
     ]
     search_results = await asyncio.gather(*search_tasks)
 
-    # Build ShopItems directly from search results (no Phase 3 needed — SerpAPI results are structured)
+    # Build ShopItems from search results
     items = []
     for item_info, sr in zip(item_descriptions, search_results):
         if not sr["link"] or not sr.get("price") or not sr.get("image_url"):
             continue
         if isinstance(item_info, str):
-            brand = ""
-            description = item_info
-            s_item, s_product = item_info, ""
+            s_item = item_info
         else:
-            brand = item_info.get("brand", "")
-            description = item_info.get("item", "")
             s_item = item_info.get("item", "")
-            s_product = item_info.get("product", "")
 
         items.append(ShopItem(
             name=sr["title"],
-            brand=brand,
+            brand="",
             price=sr["price"],
             link=sr["link"],
-            description=description,
+            description=s_item,
             image=sr["image_url"],
             search_item=s_item,
-            search_product=s_product,
+            search_product="",
         ))
 
     return VibeResponse(vibe=req.vibe, items=items)
@@ -700,7 +747,7 @@ Return a JSON array of 6-8 item descriptions for a complete outfit that nails th
 @app.post("/shop-refresh", response_model=ShopItem)
 async def refresh_product(req: RefreshRequest):
     """Get an alternative product for the same item category, excluding previously seen links."""
-    item_info = {"item": req.item, "brand": req.brand, "product": req.product}
+    item_info = {"item": req.item}
     loop = asyncio.get_event_loop()
     sr = await loop.run_in_executor(
         _executor, search_product, item_info, req.budget, req.exclude_links
@@ -709,7 +756,7 @@ async def refresh_product(req: RefreshRequest):
         raise HTTPException(status_code=404, detail="No more alternatives found")
     return ShopItem(
         name=sr["title"],
-        brand=req.brand,
+        brand="",
         price=sr["price"],
         link=sr["link"],
         description=req.item,
