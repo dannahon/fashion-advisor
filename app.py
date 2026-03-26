@@ -19,8 +19,12 @@ import io
 import base64
 import json
 import asyncio
+import logging
 from concurrent.futures import ThreadPoolExecutor
 import anthropic
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("fashion-advisor")
 from pinecone import Pinecone
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.staticfiles import StaticFiles
@@ -230,15 +234,19 @@ def format_profile(profile) -> str:
 
 def ask_claude(system: str, user_content: list, max_tokens: int = 2048, temperature: float = 1.0) -> str:
     """Send a request to Claude and return the text response."""
-    client = anthropic.Anthropic()
-    response = client.messages.create(
-        model=CLAUDE_MODEL,
-        max_tokens=max_tokens,
-        temperature=temperature,
-        system=system,
-        messages=[{"role": "user", "content": user_content}],
-    )
-    return response.content[0].text
+    try:
+        client = anthropic.Anthropic()
+        response = client.messages.create(
+            model=CLAUDE_MODEL,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            system=system,
+            messages=[{"role": "user", "content": user_content}],
+        )
+        return response.content[0].text
+    except Exception as e:
+        logger.error(f"Claude API error: {type(e).__name__}: {e}")
+        raise
 
 
 # ── FastAPI app ──────────────────────────────────────────────────────────────
@@ -776,8 +784,9 @@ Return a JSON array of 6-8 item descriptions for a complete outfit that nails th
 
     try:
         raw_items = ask_claude(VIBE_ITEMS_PROMPT, [{"type": "text", "text": items_message}])
-    except Exception:
-        raise HTTPException(status_code=502, detail="Style advisor is temporarily unavailable — please try again")
+    except Exception as e:
+        logger.error(f"shop-vibe Claude call failed: {type(e).__name__}: {e}")
+        raise HTTPException(status_code=502, detail=f"Style advisor is temporarily unavailable — {type(e).__name__}: {e}")
 
     try:
         cleaned = raw_items.strip()
