@@ -671,7 +671,7 @@ async function sendVibe() {
 function buildCardHtml(item) {
   const saved = isPieceSaved(item.link);
   const imgHtml = item.image
-    ? '<img class="product-image" src="' + escapeHtml(item.image) + '" alt="' + escapeHtml(item.name) + '" onerror="this.style.display=\'none\'">'
+    ? '<img class="product-image" src="' + escapeHtml(item.image) + '" alt="' + escapeHtml(item.name) + '">'
     : '';
   return imgHtml +
     '<div class="product-info">' +
@@ -697,6 +697,10 @@ function wireCardActions(card) {
     e.stopPropagation();
     toggleSave(card);
   });
+  const img = card.querySelector('.product-image');
+  if (img) {
+    img.addEventListener('error', () => refreshCard(card));
+  }
 }
 
 function renderProducts(vibe, items) {

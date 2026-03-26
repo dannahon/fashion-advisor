@@ -671,7 +671,7 @@ Return a JSON array of 6-8 item descriptions for a complete outfit that nails th
     # Build ShopItems directly from search results (no Phase 3 needed — SerpAPI results are structured)
     items = []
     for item_info, sr in zip(item_descriptions, search_results):
-        if not sr["link"] or not sr.get("price"):
+        if not sr["link"] or not sr.get("price") or not sr.get("image_url"):
             continue
         if isinstance(item_info, str):
             brand = ""
@@ -705,7 +705,7 @@ async def refresh_product(req: RefreshRequest):
     sr = await loop.run_in_executor(
         _executor, search_product, item_info, req.budget, req.exclude_links
     )
-    if not sr["link"] or not sr.get("price"):
+    if not sr["link"] or not sr.get("price") or not sr.get("image_url"):
         raise HTTPException(status_code=404, detail="No more alternatives found")
     return ShopItem(
         name=sr["title"],
