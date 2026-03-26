@@ -473,7 +473,7 @@ def search_product(item_info, budget="", exclude_links=None) -> dict:
             })
             img_data = img_search.get_dict()
             for img in img_data.get("images_results", []):
-                img_url = img.get("thumbnail", "") or img.get("original", "")
+                img_url = img.get("original", "") or img.get("thumbnail", "")
                 if not img_url:
                     continue
                 # Skip images from bad sources
