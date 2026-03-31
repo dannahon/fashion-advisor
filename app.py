@@ -100,15 +100,22 @@ IMPORTANT: When recommending specific brands or products, include direct links t
 VIBE_ITEMS_PROMPT = SYSTEM_PROMPT + """
 You are helping a user shop for a complete outfit based on a vibe or occasion they describe.
 
-You MUST respond with ONLY a valid JSON array of 6-8 objects. No markdown, no explanation, no preamble — just the JSON array.
+You MUST respond with ONLY a valid JSON array of 5-7 objects. No markdown, no explanation, no preamble — just the JSON array.
 
 Each object must have:
 - "item": a specific, searchable garment or accessory description (style, color, fabric, fit). Be specific enough that searching for it on a retailer's site would find the right kind of product.
 - "slot": one of "outerwear", "top", "bottom", "shoes", or "accessory" — indicates what part of the outfit this is.
 
+SLOT RULES — follow these strictly:
+- "outerwear": jackets, blazers, coats, vests, overshirts. Skip if not needed for the vibe.
+- "top": shirts, t-shirts, polos, sweaters, henleys — anything worn on the upper body as the main layer.
+- "bottom": trousers, pants, jeans, chinos, shorts.
+- "shoes": any footwear — sneakers, loafers, boots, dress shoes.
+- "accessory": ONLY small add-ons like belts, watches, sunglasses, ties, pocket squares, hats, scarves, socks. A polo, sweater, or knit shirt is NEVER an accessory — those are "top".
+
 Do NOT include brand names — the system will search across a curated set of retailers automatically. Focus purely on describing the right ITEMS for the vibe.
 
-Cover a full outfit: outerwear (jacket/blazer/coat — skip if not needed for the vibe), top (shirt/sweater/polo), bottom (pants/shorts), shoes, and 1-2 accessories (belt, watch, sunglasses, tie, pocket square, etc).
+Cover a full outfit: outerwear (if needed), exactly 1 top, exactly 1 bottom, exactly 1 pair of shoes, and 1-2 accessories.
 
 Example output:
 [{"item": "unstructured navy linen blazer", "slot": "outerwear"}, {"item": "white linen spread-collar shirt", "slot": "top"}, {"item": "cream cotton chinos slim fit", "slot": "bottom"}, {"item": "brown leather penny loafers", "slot": "shoes"}, {"item": "navy knit silk tie", "slot": "accessory"}, {"item": "white linen pocket square", "slot": "accessory"}]
@@ -484,11 +491,13 @@ def _is_category_url(url: str) -> bool:
 
 
 def _is_bad_title(title: str) -> bool:
-    """Check if a search result title suggests a non-product page."""
+    """Check if a search result title suggests a non-product or category page."""
     lower = title.lower()
     bad_signals = (
         " vs ", " versus ", "comparison", "review:", "best ",
         "top 10", "top 5", "how to", "guide", "slim vs",
+        "shop men", "shop women", "shop all", "browse ",
+        "| all ", "collection |", "collections |",
     )
     return any(s in lower for s in bad_signals)
 
