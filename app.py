@@ -117,6 +117,13 @@ Do NOT include brand names — the system will search across a curated set of re
 
 Cover a full outfit: outerwear (if needed), exactly 1 top, exactly 1 bottom, exactly 1 pair of shoes, and 1-2 accessories.
 
+Think carefully about what the occasion ACTUALLY calls for:
+- Boat day / beach / pool → swim trunks as the bottom, skip belts, skip outerwear
+- Gym / workout → athletic shorts or joggers, performance top, trainers
+- Black tie → tuxedo pieces, dress shoes, bow tie
+- Casual → don't force a belt or tie if they don't add to the look
+Only recommend accessories that genuinely complete the outfit for that specific scenario.
+
 Example output:
 [{"item": "unstructured navy linen blazer", "slot": "outerwear"}, {"item": "white linen spread-collar shirt", "slot": "top"}, {"item": "cream cotton chinos slim fit", "slot": "bottom"}, {"item": "brown leather penny loafers", "slot": "shoes"}, {"item": "navy knit silk tie", "slot": "accessory"}, {"item": "white linen pocket square", "slot": "accessory"}]
 """
@@ -482,8 +489,22 @@ def _is_category_url(url: str) -> bool:
         "/collections/", "/collection/", "/category/", "/categories/",
         "/shop/", "/search", "/browse/", "/c/", "/plp/",
         "/buy/", "/mens-", "/womens-", "/all-",
+        "/mens/", "/womens/", "/accessories/", "/clothing/",
+        "/shoes/", "/bags/", "/sale/",
         "?q=", "?query=", "?search=",
     )
+    # Also catch URLs that end at a category level with no product slug
+    # e.g. mrporter.com/en-kw/mens/accessories/hats/caps
+    segments = [s for s in lower.rstrip("/").split("/") if s]
+    # If last segment is a generic category word, it's probably a listing
+    category_endings = {
+        "caps", "hats", "shirts", "pants", "jeans", "shoes", "boots",
+        "sneakers", "loafers", "blazers", "jackets", "coats", "belts",
+        "ties", "shorts", "sweaters", "polos", "tees", "accessories",
+        "outerwear", "knitwear", "footwear", "bags", "sale", "new",
+    }
+    if segments and segments[-1] in category_endings:
+        return True
     # URLs ending at a category level (e.g. site.com/mens/shirts)
     if any(s in lower for s in category_signals):
         return True
@@ -789,7 +810,7 @@ async def get_vibe_recommendations(req: VibeRequest):
 
 The user wants to dress for this vibe/occasion: "{req.vibe}"
 {format_profile(req.profile)}
-Return a JSON array of 6-8 item descriptions for a complete outfit that nails this vibe. Remember: ONLY output the JSON array, nothing else."""
+Return a JSON array of 5-7 item descriptions for a complete outfit that nails this vibe. Remember: ONLY output the JSON array, nothing else."""
 
     try:
         raw_items = ask_claude(VIBE_ITEMS_PROMPT, [{"type": "text", "text": items_message}])
@@ -823,15 +844,20 @@ Return a JSON array of 6-8 item descriptions for a complete outfit that nails th
 
     # Build ShopItems from search results
     items = []
+    failed_essential = []  # track essential slots that failed
     for item_info, sr in zip(item_descriptions, search_results):
-        if not sr["link"] or not sr.get("price") or not sr.get("image_url"):
-            continue
         if isinstance(item_info, str):
             s_item = item_info
             slot = "accessory"
         else:
             s_item = item_info.get("item", "")
             slot = item_info.get("slot", "accessory")
+
+        if not sr["link"] or not sr.get("price") or not sr.get("image_url"):
+            # If an essential slot failed, queue it for retry
+            if slot in ("top", "bottom", "shoes"):
+                failed_essential.append(item_info)
+            continue
 
         items.append(ShopItem(
             name=sr["title"],
@@ -844,6 +870,30 @@ Return a JSON array of 6-8 item descriptions for a complete outfit that nails th
             search_product="",
             slot=slot,
         ))
+
+    # Retry failed essential slots once (different random retailers)
+    if failed_essential:
+        retry_tasks = [
+            loop.run_in_executor(_executor, search_product, item_info, budget)
+            for item_info in failed_essential
+        ]
+        retry_results = await asyncio.gather(*retry_tasks)
+        for item_info, sr in zip(failed_essential, retry_results):
+            if not sr["link"] or not sr.get("price") or not sr.get("image_url"):
+                continue
+            s_item = item_info if isinstance(item_info, str) else item_info.get("item", "")
+            slot = "accessory" if isinstance(item_info, str) else item_info.get("slot", "accessory")
+            items.append(ShopItem(
+                name=sr["title"],
+                brand="",
+                price=sr["price"],
+                link=sr["link"],
+                description=s_item,
+                image=sr["image_url"],
+                search_item=s_item,
+                search_product="",
+                slot=slot,
+            ))
 
     return VibeResponse(vibe=req.vibe, items=items)
 
