@@ -543,6 +543,26 @@ input::placeholder { color: var(--text-muted); }
     </div>
 
     <div class="onboarding-field">
+      <label>Shoe Size (US)</label>
+      <select id="ob-shoe-size">
+        <option value="">Select...</option>
+        <option value="7">7</option>
+        <option value="7.5">7.5</option>
+        <option value="8">8</option>
+        <option value="8.5">8.5</option>
+        <option value="9">9</option>
+        <option value="9.5">9.5</option>
+        <option value="10">10</option>
+        <option value="10.5">10.5</option>
+        <option value="11">11</option>
+        <option value="11.5">11.5</option>
+        <option value="12">12</option>
+        <option value="13">13</option>
+        <option value="14">14</option>
+      </select>
+    </div>
+
+    <div class="onboarding-field">
       <label>Budget per item</label>
       <div class="pill-group" id="ob-budget">
         <button class="pill" data-val="budget">Balling on a Budget</button>
@@ -911,11 +931,12 @@ document.querySelectorAll('.pill-group').forEach(group => {
 // Save profile
 document.getElementById('ob-save').addEventListener('click', () => {
   const height = document.getElementById('ob-height').value;
+  const shoeSize = document.getElementById('ob-shoe-size').value;
   const buildEl = document.querySelector('#ob-build .pill.selected');
   const budgetEl = document.querySelector('#ob-budget .pill.selected');
   const build = buildEl ? buildEl.dataset.val : '';
   const budget = budgetEl ? budgetEl.dataset.val : '';
-  saveUserProfile({ height, build, budget });
+  saveUserProfile({ height, build, budget, shoeSize });
   onboarding.classList.add('hidden');
 });
 
@@ -930,6 +951,7 @@ document.getElementById('edit-profile').addEventListener('click', () => {
   const profile = getUserProfile();
   if (profile) {
     document.getElementById('ob-height').value = profile.height || '';
+    document.getElementById('ob-shoe-size').value = profile.shoeSize || '';
     document.querySelectorAll('#ob-build .pill').forEach(p => {
       p.classList.toggle('selected', p.dataset.val === profile.build);
     });

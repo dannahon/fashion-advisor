@@ -308,6 +308,7 @@ class UserProfile(BaseModel):
     height: Optional[str] = None
     build: Optional[str] = None
     budget: Optional[str] = None
+    shoeSize: Optional[str] = None
 
 
 class AdviceRequest(BaseModel):
@@ -554,21 +555,25 @@ def _scrape_product_image(url: str, timeout: float = 5.0) -> str:
         return ""
 
 
-def search_product(item_info, budget="", exclude_links=None) -> dict:
+def search_product(item_info, budget="", exclude_links=None, shoe_size="") -> dict:
     """Search for a real, in-stock product using SerpAPI Google organic + images."""
     if exclude_links is None:
         exclude_links = []
     exclude_set = set(exclude_links)
 
     if isinstance(item_info, str):
-        item, brand, product = item_info, "", ""
+        item, brand, product, slot = item_info, "", "", ""
     else:
         item = item_info.get("item", "")
         brand = item_info.get("brand", "")
         product = item_info.get("product", "")
+        slot = item_info.get("slot", "")
 
     # Build item query (no brand bias — let the site: filter handle sourcing)
     query = f"men's {item}"
+    # Append shoe size for footwear queries to favor in-stock results
+    if shoe_size and slot == "shoes":
+        query += f" size {shoe_size}"
 
     # Build site-restricted search query (pass item text for athletic detection)
     site_filter = _get_site_query(budget, item_hint=item)
@@ -609,9 +614,11 @@ def search_product(item_info, budget="", exclude_links=None) -> dict:
             bottom = rich.get("bottom") or {}
             exts = bottom.get("detected_extensions") or {}
             if exts.get("price"):
-                price = f"${exts['price']:g}"
+                p = exts['price']
+                price = f"${p:,.0f}" if p == int(p) else f"${p:,.2f}"
             elif exts.get("price_from"):
-                price = f"${exts['price_from']:g}"
+                p = exts['price_from']
+                price = f"${p:,.0f}" if p == int(p) else f"${p:,.2f}"
             else:
                 # Fallback: parse first $XX from extensions list
                 for ext_str in (bottom.get("extensions") or []):
@@ -835,9 +842,10 @@ Return a JSON array of 5-7 item descriptions for a complete outfit that nails th
 
     # Phase 2: Search for real, in-stock products for each item
     budget = req.profile.budget if req.profile else ""
+    shoe_size = req.profile.shoeSize if req.profile else ""
     loop = asyncio.get_event_loop()
     search_tasks = [
-        loop.run_in_executor(_executor, search_product, item_info, budget)
+        loop.run_in_executor(_executor, search_product, item_info, budget, None, shoe_size)
         for item_info in item_descriptions
     ]
     search_results = await asyncio.gather(*search_tasks)
@@ -874,7 +882,7 @@ Return a JSON array of 5-7 item descriptions for a complete outfit that nails th
     # Retry failed essential slots once (different random retailers)
     if failed_essential:
         retry_tasks = [
-            loop.run_in_executor(_executor, search_product, item_info, budget)
+            loop.run_in_executor(_executor, search_product, item_info, budget, None, shoe_size)
             for item_info in failed_essential
         ]
         retry_results = await asyncio.gather(*retry_tasks)
