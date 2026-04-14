@@ -44,7 +44,6 @@ except ImportError:
 _executor = ThreadPoolExecutor(max_workers=8)
 
 CLAUDE_MODEL = "claude-sonnet-4-20250514"
-HAIKU_MODEL = "claude-haiku-4-5-20251001"
 SERPAPI_KEY = os.environ.get("SERPAPI_KEY", "eaf631bccd0471c91ad21097a4c78eb76978dabbc4b88a76825b4d2564c00b6f")
 PINECONE_API_KEY = os.environ.get("PINECONE_API_KEY", "pcsk_2PdVrk_CiVFvEbYqs8ts2GqJ69PMurqFpkeJDBjA1JdoPCzGJ6xvovgtn8jxLHyy5STAbH")
 PINECONE_INDEX = "style-advice"
@@ -127,58 +126,8 @@ Only recommend accessories that genuinely complete the outfit for that specific 
 
 Example output:
 [{"item": "unstructured navy linen blazer", "slot": "outerwear"}, {"item": "white linen spread-collar shirt", "slot": "top"}, {"item": "cream cotton chinos slim fit", "slot": "bottom"}, {"item": "brown leather penny loafers", "slot": "shoes"}, {"item": "navy knit silk tie", "slot": "accessory"}, {"item": "white linen pocket square", "slot": "accessory"}]
-
-For every item, also add a "reason" field: a ≤12-word explanation of why this specific choice fits the vibe. Reference concrete style logic (fabric, color, silhouette, climate). No filler words like "versatile" or "stylish".
 """
 
-INTENT_CLASSIFIER_PROMPT = """You classify men's fashion shopping queries into one of four modes.
-
-- "piece": user wants a single category of item with multiple options to choose from. Examples: "loafers under $400 for Miami summer", "warm coats for NYC winter", "linen shirts for the beach", "black jeans that drape well".
-- "outfit": user wants a full head-to-toe look for a vibe or occasion. Examples: "smart casual Friday", "beach wedding in Positano", "first date at a cocktail bar", "ranch wedding in Texas".
-- "exploratory": user wants fresh ideas outside their usual. Examples: "show me something unexpected for fall", "surprise me", "break me out of my rut", "something I wouldn't normally wear".
-- "clarify": query is too vague to act on without more info. Examples: "clothes", "help", "something nice", "idk".
-
-Respond with ONLY one word: piece, outfit, exploratory, or clarify. No explanation, no punctuation."""
-
-PIECE_ITEMS_PROMPT = SYSTEM_PROMPT + """
-You are helping a user shop for a specific TYPE of item. They've asked for a single category (shoes, shirts, jackets, etc.) and want to see multiple strong options.
-
-You MUST respond with ONLY a valid JSON array of 4-6 objects. No markdown, no explanation, no preamble — just the JSON array.
-
-Each object must have:
-- "item": a specific, searchable garment description (style, color, material, fit). Each item should be a GENUINELY different take on the user's request — different materials, colors, silhouettes, or levels of formality. Not slight tweaks of the same thing.
-- "reason": a ≤12-word explanation of why this specific pick fits their query. Reference concrete style logic (climate, fabric, silhouette, occasion). No filler ("versatile", "stylish", "classic choice").
-
-Do NOT include brand names — the system searches curated retailers automatically.
-
-Example for "loafers under $400 for Miami summer":
-[
-  {"item": "brown suede tassel loafer", "reason": "Summer-weight suede breathes in Miami humidity"},
-  {"item": "navy woven leather loafer", "reason": "Open weave lets heat escape on hot days"},
-  {"item": "cream canvas penny loafer", "reason": "Light color and casual fabric suit resort settings"},
-  {"item": "burgundy horsebit loafer", "reason": "Warm tone adds depth for evening wear"},
-  {"item": "olive suede bit loafer", "reason": "Earthy color pairs with linen and natural fabrics"}
-]
-"""
-
-EXPLORATORY_ITEMS_PROMPT = SYSTEM_PROMPT + """
-The user wants FRESH ideas they wouldn't normally think of — directional picks that broaden their taste without abandoning it.
-
-You MUST respond with ONLY a valid JSON array of 3-5 objects. No markdown, no explanation — just JSON.
-
-Each object must have:
-- "item": a specific, searchable garment description. Push harder than "safe". Reach for a texture, silhouette, or color they might not own yet.
-- "reason": a ≤12-word explanation of why this is worth trying. Reference a concrete aesthetic or use-case, not filler.
-
-Do NOT include brand names. Keep items genuinely wearable — directional but not costumey.
-
-Example:
-[
-  {"item": "slouchy pleated wool trouser in cream", "reason": "Replaces chinos with more drape and winter warmth"},
-  {"item": "shawl-collar chocolate cardigan", "reason": "Softer alternative to a blazer for casual dinners"},
-  {"item": "brown suede chelsea boot with crepe sole", "reason": "Grippier, softer take on a classic silhouette"}
-]
-"""
 
 
 def retrieve_context(query: str, n_results: int = TOP_K) -> tuple:
@@ -297,12 +246,12 @@ def format_profile(profile) -> str:
     return "\n\nUser profile: " + ", ".join(parts) + ". Tailor your advice to their body type and budget preferences."
 
 
-def ask_claude(system: str, user_content: list, max_tokens: int = 2048, temperature: float = 1.0, model: str = CLAUDE_MODEL) -> str:
+def ask_claude(system: str, user_content: list, max_tokens: int = 2048, temperature: float = 1.0) -> str:
     """Send a request to Claude and return the text response."""
     try:
         client = anthropic.Anthropic()
         response = client.messages.create(
-            model=model,
+            model=CLAUDE_MODEL,
             max_tokens=max_tokens,
             temperature=temperature,
             system=system,
@@ -312,25 +261,6 @@ def ask_claude(system: str, user_content: list, max_tokens: int = 2048, temperat
     except Exception as e:
         logger.error(f"Claude API error: {type(e).__name__}: {e}")
         raise
-
-
-def classify_intent(query: str) -> str:
-    """Classify a user query into piece, outfit, exploratory, or clarify.
-    Uses Haiku for speed and cost."""
-    try:
-        result = ask_claude(
-            INTENT_CLASSIFIER_PROMPT,
-            [{"type": "text", "text": query}],
-            max_tokens=10,
-            temperature=0.0,
-            model=HAIKU_MODEL,
-        )
-        mode = result.strip().lower().rstrip(".,!?")
-        if mode in ("piece", "outfit", "exploratory", "clarify"):
-            return mode
-    except Exception as e:
-        logger.error(f"classify_intent failed: {e}")
-    return "outfit"  # safe default
 
 
 # ── FastAPI app ──────────────────────────────────────────────────────────────
@@ -402,18 +332,12 @@ class VibeRequest(BaseModel):
     profile: Optional[UserProfile] = None
 
 
-class QueryRequest(BaseModel):
-    query: str
-    profile: Optional[UserProfile] = None
-
-
 class RefreshRequest(BaseModel):
     item: str
     brand: str = ""
     product: str = ""
     budget: str = ""
     exclude_links: List[str] = []
-    max_price: Optional[int] = None
 
 
 class ShopItem(BaseModel):
@@ -426,19 +350,11 @@ class ShopItem(BaseModel):
     search_item: str = ""
     search_product: str = ""
     slot: str = ""
-    reason: str = ""  # 12-word "why this for you" explanation
 
 
 class VibeResponse(BaseModel):
     vibe: str
     items: List[ShopItem]
-
-
-class QueryResponse(BaseModel):
-    mode: str  # "piece", "outfit", "exploratory", or "clarify"
-    query: str
-    items: List[ShopItem] = []
-    clarify: str = ""  # follow-up question shown when mode == "clarify"
 
 
 import re as _re
@@ -567,133 +483,32 @@ def _extract_dollar_price(text: str) -> str:
     return ""
 
 
-def _price_to_float(price_str: str) -> float:
-    """'$1,234.56' → 1234.56. Returns 0.0 if parse fails."""
-    if not price_str:
-        return 0.0
-    m = _re.search(r'(\d[\d,]*(?:\.\d{1,2})?)', price_str.replace("$", ""))
-    if not m:
-        return 0.0
-    try:
-        return float(m.group(1).replace(",", ""))
-    except ValueError:
-        return 0.0
-
-
-def _extract_max_price(text: str) -> Optional[int]:
-    """Parse a max price cap from a natural-language query.
-    Handles 'under $400', 'below $1,200', 'less than $300', 'sub-$500', 'max $250',
-    '$400 or less', 'up to $500', 'budget $300'. Returns None if no cap found."""
-    if not text:
-        return None
-    t = text.lower().replace(",", "")
-    patterns = [
-        r'(?:under|below|less than|max|maximum|up to|sub[- ]?|budget(?: of)?)\s*\$?\s*(\d+)',
-        r'\$?\s*(\d+)\s*(?:or less|or under|max|maximum)',
-    ]
-    for pat in patterns:
-        m = _re.search(pat, t)
-        if m:
-            try:
-                val = int(m.group(1))
-                if 20 <= val <= 20000:  # sane bounds
-                    return val
-            except ValueError:
-                continue
-    return None
-
-
-CATEGORY_WORDS = {
-    "caps", "hats", "shirts", "pants", "jeans", "shoes", "boots",
-    "sneakers", "loafers", "blazers", "jackets", "coats", "belts",
-    "ties", "shorts", "sweaters", "polos", "tees", "accessories",
-    "outerwear", "knitwear", "footwear", "bags", "sale", "new",
-    "trousers", "chinos", "shirting", "tailoring", "denim",
-    "elevated-casual", "smart-casual", "casual", "formal", "workwear",
-    "tops", "bottoms", "swimwear", "underwear", "socks", "hosiery",
-    "clothing", "apparel", "mens", "men", "womens", "women",
-    "sandals", "slippers", "slides", "mules", "oxfords", "derbies",
-    "brogues", "trainers", "flats", "heels", "eyewear", "sunglasses",
-    "watches", "wallets", "scarves", "gloves", "ready-to-wear",
-}
-
-MATERIAL_WORDS = {
-    "suede", "leather", "canvas", "cotton", "wool", "linen", "silk",
-    "nylon", "denim", "cashmere", "velvet", "satin", "tweed", "corduroy",
-}
-
-
-def _is_women_only(url: str, title: str) -> bool:
-    """Check if a URL or title points to women's-only content."""
-    lower_url = url.lower()
-    lower_title = title.lower()
-    # URL path segments that mark women's sections
-    path = lower_url.split("?", 1)[0]
-    if any(s in path for s in ("/women/", "/womens/", "/women-", "/ladies/", "/ladies-")):
-        return True
-    # Title contains women's with no men's counterbalance
-    has_womens = "women" in lower_title or "ladies" in lower_title
-    has_mens = "for men" in lower_title or "men's" in lower_title or "mens" in lower_title
-    if has_womens and not has_mens:
-        return True
-    return False
-
-
 def _is_category_url(url: str) -> bool:
-    """Check if a URL looks like a category/collection/brand-landing page rather than a product page.
-
-    Strategy: flag URLs whose STRUCTURE says 'listing' (specific path fragments
-    known to host categories), or whose trailing segment is a generic word."""
+    """Check if a URL looks like a category/collection page rather than a product page."""
     lower = url.lower()
-    # Query-param listing signals (search pages)
-    if any(s in lower for s in ("?q=", "?query=", "?search=", "?filter=")):
-        return True
-    # Strip query string before path analysis (srsltid=... etc. is noise).
-    path = lower.split("?", 1)[0]
-    segments = [s for s in path.rstrip("/").split("/") if s]
-
-    # Hard substring signals — path fragments ONLY used on listing pages.
-    hard_signals = (
+    category_signals = (
         "/collections/", "/collection/", "/category/", "/categories/",
-        "/shop-by/", "/shop_by/", "/shopby/",
-        "/browse/", "/plp/", "/department/", "/dept/", "/catalog/",
-        "/all-", "/search",
-        # Saks uses /c/ for categories and /brand/ for brand landing pages
-        "/c/", "/brand/", "/brands/",
-        # Mr Porter uses /designer/ for designer category listings
-        # (product URLs use /product/ instead)
-        "/designer/", "/designers/",
+        "/shop/", "/search", "/browse/", "/c/", "/plp/",
+        "/buy/", "/mens-", "/womens-", "/all-",
+        "/mens/", "/womens/", "/accessories/", "/clothing/",
+        "/shoes/", "/bags/", "/sale/",
+        "?q=", "?query=", "?search=",
     )
-    if any(s in path for s in hard_signals):
+    # Also catch URLs that end at a category level with no product slug
+    # e.g. mrporter.com/en-kw/mens/accessories/hats/caps
+    segments = [s for s in lower.rstrip("/").split("/") if s]
+    # If last segment is a generic category word, it's probably a listing
+    category_endings = {
+        "caps", "hats", "shirts", "pants", "jeans", "shoes", "boots",
+        "sneakers", "loafers", "blazers", "jackets", "coats", "belts",
+        "ties", "shorts", "sweaters", "polos", "tees", "accessories",
+        "outerwear", "knitwear", "footwear", "bags", "sale", "new",
+    }
+    if segments and segments[-1] in category_endings:
         return True
-
-    # URL ends at a generic category word → listing page
-    # (e.g. mrporter.com/en-us/mens/clothing/shoes/loafers)
-    if segments:
-        last = segments[-1].split(".")[0]  # strip .html etc.
-
-        # Direct category word
-        if last in CATEGORY_WORDS:
-            return True
-
-        # Compound category slug like "suede-shoes", "dress-shoes",
-        # "slides-sandals", "leather-loafers". If EVERY part of the hyphenated
-        # slug is a category or material word, it's a listing.
-        if "-" in last:
-            parts = last.split("-")
-            if len(parts) <= 4 and all(
-                p in CATEGORY_WORDS or p in MATERIAL_WORDS for p in parts
-            ):
-                return True
-            # Also flag if the LAST hyphen-word is a category AND the slug is short.
-            # (Catches "summer-shoes" where "summer" isn't in either set.)
-            if parts[-1] in CATEGORY_WORDS and len(parts) <= 3:
-                return True
-
-        # Very short trailing segment with no digits — suspect category filter
-        # (e.g. /c/men/shoes/slides-sandals/white where last is a color filter)
-        if len(last) <= 6 and last.isalpha() and len(segments) >= 3:
-            return True
+    # URLs ending at a category level (e.g. site.com/mens/shirts)
+    if any(s in lower for s in category_signals):
+        return True
     return False
 
 
@@ -706,23 +521,7 @@ def _is_bad_title(title: str) -> bool:
         "shop men", "shop women", "shop all", "browse ",
         "| all ", "collection |", "collections |",
     )
-    if any(s in lower for s in bad_signals):
-        return True
-
-    # Patterns like "Shoes for Men", "Suede Shoes for Men", "Loafers for Women"
-    # These are always category pages, never single products.
-    if _re.search(r'\b\w+s\s+for\s+(men|women)\b', lower):
-        return True
-
-    # Category pages often have titles like "Men's Elevated Casual | END. (US)"
-    # or "Loafers | Mr Porter" — pure category word before a pipe.
-    if "|" in lower:
-        pre = lower.split("|", 1)[0].strip()
-        pre_words = pre.replace("'s", "").replace("-", " ").split()
-        if 1 <= len(pre_words) <= 4:
-            if any(w in CATEGORY_WORDS for w in pre_words):
-                return True
-    return False
+    return any(s in lower for s in bad_signals)
 
 
 def _scrape_product_image(url: str, timeout: float = 5.0) -> str:
@@ -756,10 +555,8 @@ def _scrape_product_image(url: str, timeout: float = 5.0) -> str:
         return ""
 
 
-def search_product(item_info, budget="", exclude_links=None, shoe_size="", max_price: Optional[int] = None) -> dict:
-    """Search for a real, in-stock product using SerpAPI Google organic + images.
-
-    max_price (if set) is a hard ceiling in USD — results priced above it are skipped."""
+def search_product(item_info, budget="", exclude_links=None, shoe_size="") -> dict:
+    """Search for a real, in-stock product using SerpAPI Google organic + images."""
     if exclude_links is None:
         exclude_links = []
     exclude_set = set(exclude_links)
@@ -777,9 +574,6 @@ def search_product(item_info, budget="", exclude_links=None, shoe_size="", max_p
     # Append shoe size for footwear queries to favor in-stock results
     if shoe_size and slot == "shoes":
         query += f" size {shoe_size}"
-    # Hint the search engine at the price range — helps bias toward in-budget results
-    if max_price:
-        query += f" under ${max_price}"
 
     # Build site-restricted search query (pass item text for athletic detection)
     site_filter = _get_site_query(budget, item_hint=item)
@@ -813,8 +607,6 @@ def search_product(item_info, budget="", exclude_links=None, shoe_size="", max_p
                 continue
             if _is_bad_title(title):
                 continue
-            if _is_women_only(lower, title):
-                continue
 
             # Extract price
             price = ""
@@ -838,12 +630,6 @@ def search_product(item_info, budget="", exclude_links=None, shoe_size="", max_p
             # Skip results without a clear dollar price
             if not price or not price.startswith("$"):
                 continue
-
-            # Enforce hard price ceiling — small slack (5%) to absorb rounding/display noise
-            if max_price:
-                val = _price_to_float(price)
-                if val > max_price * 1.05:
-                    continue
 
             result["title"] = title
             result["link"] = link
@@ -1013,207 +799,110 @@ Please provide specific brand and store recommendations organized by price tier 
     return AdviceResponse(answer=answer)
 
 
-def _parse_items_json(raw: str) -> list:
-    """Extract and parse a JSON array from Claude's response, tolerant of fences/preamble."""
-    cleaned = raw.strip()
-    if cleaned.startswith("```"):
-        cleaned = cleaned.split("\n", 1)[1]
-        cleaned = cleaned.rsplit("```", 1)[0]
-    start = cleaned.find("[")
-    end = cleaned.rfind("]")
-    if start != -1 and end != -1:
-        cleaned = cleaned[start:end + 1]
-    return json.loads(cleaned)
-
-
-def _item_to_shopitem(item_info, sr) -> ShopItem:
-    """Build a ShopItem from a Claude item description + search result."""
-    if isinstance(item_info, str):
-        s_item, slot, reason = item_info, "", ""
-    else:
-        s_item = item_info.get("item", "")
-        slot = item_info.get("slot", "")
-        reason = item_info.get("reason", "")
-    return ShopItem(
-        name=sr["title"],
-        brand="",
-        price=sr["price"],
-        link=sr["link"],
-        description=s_item,
-        image=sr["image_url"],
-        search_item=s_item,
-        search_product="",
-        slot=slot,
-        reason=reason,
-    )
-
-
-async def _search_and_build(item_descriptions: list, profile: Optional[UserProfile], retry_slots=(), max_price: Optional[int] = None) -> List[ShopItem]:
-    """Run parallel product searches for a list of item descriptions and return ShopItems.
-    If retry_slots is provided, failed searches for items in those slots get retried once.
-    max_price (optional) caps per-item price — results above it are skipped."""
-    budget = profile.budget if profile else ""
-    shoe_size = profile.shoeSize if profile else ""
-    loop = asyncio.get_event_loop()
-    search_tasks = [
-        loop.run_in_executor(_executor, search_product, item_info, budget, None, shoe_size, max_price)
-        for item_info in item_descriptions
-    ]
-    search_results = await asyncio.gather(*search_tasks)
-
-    items = []
-    failed_retry = []
-    for item_info, sr in zip(item_descriptions, search_results):
-        if not sr["link"] or not sr.get("price") or not sr.get("image_url"):
-            slot = "" if isinstance(item_info, str) else item_info.get("slot", "")
-            if slot in retry_slots:
-                failed_retry.append(item_info)
-            continue
-        items.append(_item_to_shopitem(item_info, sr))
-
-    if failed_retry:
-        retry_tasks = [
-            loop.run_in_executor(_executor, search_product, item_info, budget, None, shoe_size, max_price)
-            for item_info in failed_retry
-        ]
-        retry_results = await asyncio.gather(*retry_tasks)
-        for item_info, sr in zip(failed_retry, retry_results):
-            if not sr["link"] or not sr.get("price") or not sr.get("image_url"):
-                continue
-            items.append(_item_to_shopitem(item_info, sr))
-
-    return items
-
-
-async def _generate_outfit(query: str, profile: Optional[UserProfile]) -> List[ShopItem]:
-    """Generate a full outfit for a vibe/occasion query."""
-    max_price = _extract_max_price(query)
+@app.post("/shop-vibe", response_model=VibeResponse)
+async def get_vibe_recommendations(req: VibeRequest):
+    """Get structured shopping recommendations based on a vibe/occasion."""
+    # Phase 1: Claude determines what items are needed for the vibe
+    search_query = f"outfit for {req.vibe} what to wear style"
     try:
-        context, _ = retrieve_context(f"outfit for {query} what to wear style")
+        context, metadatas = retrieve_context(search_query)
     except Exception:
-        context = ""
+        context, metadatas = "", []
 
-    items_message = f"""Here are relevant excerpts from expert menswear sources:
+    items_message = f"""Here are relevant excerpts from the Die, Workwear! blog:
 
 {context}
 
 ---
 
-The user wants to dress for this vibe/occasion: "{query}"
-{format_profile(profile)}
+The user wants to dress for this vibe/occasion: "{req.vibe}"
+{format_profile(req.profile)}
 Return a JSON array of 5-7 item descriptions for a complete outfit that nails this vibe. Remember: ONLY output the JSON array, nothing else."""
 
     try:
         raw_items = ask_claude(VIBE_ITEMS_PROMPT, [{"type": "text", "text": items_message}])
     except Exception as e:
-        logger.error(f"outfit generation failed: {type(e).__name__}: {e}")
+        logger.error(f"shop-vibe Claude call failed: {type(e).__name__}: {e}")
         raise HTTPException(status_code=502, detail=f"Style advisor is temporarily unavailable — {type(e).__name__}: {e}")
 
     try:
-        item_descriptions = _parse_items_json(raw_items)
+        cleaned = raw_items.strip()
+        # Strip markdown code fences if present
+        if cleaned.startswith("```"):
+            cleaned = cleaned.split("\n", 1)[1]
+            cleaned = cleaned.rsplit("```", 1)[0]
+        # Extract JSON array even if surrounded by text
+        start = cleaned.find("[")
+        end = cleaned.rfind("]")
+        if start != -1 and end != -1:
+            cleaned = cleaned[start:end + 1]
+        item_descriptions = json.loads(cleaned)
     except (json.JSONDecodeError, IndexError, ValueError):
         raise HTTPException(status_code=502, detail="Could not build outfit — please try again")
 
-    return await _search_and_build(item_descriptions, profile, retry_slots=("top", "bottom", "shoes"), max_price=max_price)
+    # Phase 2: Search for real, in-stock products for each item
+    budget = req.profile.budget if req.profile else ""
+    shoe_size = req.profile.shoeSize if req.profile else ""
+    loop = asyncio.get_event_loop()
+    search_tasks = [
+        loop.run_in_executor(_executor, search_product, item_info, budget, None, shoe_size)
+        for item_info in item_descriptions
+    ]
+    search_results = await asyncio.gather(*search_tasks)
 
+    # Build ShopItems from search results
+    items = []
+    failed_essential = []  # track essential slots that failed
+    for item_info, sr in zip(item_descriptions, search_results):
+        if isinstance(item_info, str):
+            s_item = item_info
+            slot = "accessory"
+        else:
+            s_item = item_info.get("item", "")
+            slot = item_info.get("slot", "accessory")
 
-async def _generate_piece(query: str, profile: Optional[UserProfile]) -> List[ShopItem]:
-    """Generate 4-6 variations of a single item category."""
-    max_price = _extract_max_price(query)
-    try:
-        context, _ = retrieve_context(query)
-    except Exception:
-        context = ""
+        if not sr["link"] or not sr.get("price") or not sr.get("image_url"):
+            # If an essential slot failed, queue it for retry
+            if slot in ("top", "bottom", "shoes"):
+                failed_essential.append(item_info)
+            continue
 
-    budget_line = f"\nHARD PRICE CEILING: ${max_price}. Every pick must realistically exist under this price — no aspirational picks above it." if max_price else ""
+        items.append(ShopItem(
+            name=sr["title"],
+            brand="",
+            price=sr["price"],
+            link=sr["link"],
+            description=s_item,
+            image=sr["image_url"],
+            search_item=s_item,
+            search_product="",
+            slot=slot,
+        ))
 
-    items_message = f"""Here are relevant excerpts from expert menswear sources:
+    # Retry failed essential slots once (different random retailers)
+    if failed_essential:
+        retry_tasks = [
+            loop.run_in_executor(_executor, search_product, item_info, budget, None, shoe_size)
+            for item_info in failed_essential
+        ]
+        retry_results = await asyncio.gather(*retry_tasks)
+        for item_info, sr in zip(failed_essential, retry_results):
+            if not sr["link"] or not sr.get("price") or not sr.get("image_url"):
+                continue
+            s_item = item_info if isinstance(item_info, str) else item_info.get("item", "")
+            slot = "accessory" if isinstance(item_info, str) else item_info.get("slot", "accessory")
+            items.append(ShopItem(
+                name=sr["title"],
+                brand="",
+                price=sr["price"],
+                link=sr["link"],
+                description=s_item,
+                image=sr["image_url"],
+                search_item=s_item,
+                search_product="",
+                slot=slot,
+            ))
 
-{context}
-
----
-
-The user is shopping for: "{query}"
-{format_profile(profile)}{budget_line}
-
-CRITICAL: Every variation MUST fit the full context of the query — climate, season, setting, formality. For "Miami summer", every pick must be summer-weight and warm-climate appropriate. No black calf city shoes, no wool, no weather-resistant finishes unless the query asks for it.
-
-Return a JSON array of 4-6 item variations that give them genuine choice. Remember: ONLY output the JSON array."""
-
-    try:
-        raw_items = ask_claude(PIECE_ITEMS_PROMPT, [{"type": "text", "text": items_message}])
-    except Exception as e:
-        logger.error(f"piece generation failed: {type(e).__name__}: {e}")
-        raise HTTPException(status_code=502, detail=f"Style advisor is temporarily unavailable — {type(e).__name__}: {e}")
-
-    try:
-        item_descriptions = _parse_items_json(raw_items)
-    except (json.JSONDecodeError, IndexError, ValueError):
-        raise HTTPException(status_code=502, detail="Could not build recommendations — please try again")
-
-    return await _search_and_build(item_descriptions, profile, max_price=max_price)
-
-
-async def _generate_exploratory(query: str, profile: Optional[UserProfile]) -> List[ShopItem]:
-    """Generate 3-5 directional picks the user wouldn't normally think of."""
-    max_price = _extract_max_price(query)
-    try:
-        context, _ = retrieve_context(query)
-    except Exception:
-        context = ""
-
-    budget_line = f"\nHARD PRICE CEILING: ${max_price}. Every pick must realistically exist under this price." if max_price else ""
-
-    items_message = f"""Here are relevant excerpts from expert menswear sources:
-
-{context}
-
----
-
-The user wants fresh, unexpected ideas: "{query}"
-{format_profile(profile)}{budget_line}
-Return a JSON array of 3-5 directional picks — each one should broaden their taste without being costumey. Remember: ONLY output the JSON array."""
-
-    try:
-        raw_items = ask_claude(EXPLORATORY_ITEMS_PROMPT, [{"type": "text", "text": items_message}])
-    except Exception as e:
-        logger.error(f"exploratory generation failed: {type(e).__name__}: {e}")
-        raise HTTPException(status_code=502, detail=f"Style advisor is temporarily unavailable — {type(e).__name__}: {e}")
-
-    try:
-        item_descriptions = _parse_items_json(raw_items)
-    except (json.JSONDecodeError, IndexError, ValueError):
-        raise HTTPException(status_code=502, detail="Could not build ideas — please try again")
-
-    return await _search_and_build(item_descriptions, profile, max_price=max_price)
-
-
-@app.post("/query", response_model=QueryResponse)
-async def unified_query(req: QueryRequest):
-    """Unified entry point: classifies intent and routes to piece/outfit/exploratory."""
-    mode = classify_intent(req.query)
-
-    if mode == "clarify":
-        return QueryResponse(
-            mode="clarify",
-            query=req.query,
-            clarify="Can you tell me more? Are you shopping for a specific item, a full outfit for an occasion, or just looking for fresh ideas?",
-        )
-
-    if mode == "piece":
-        items = await _generate_piece(req.query, req.profile)
-    elif mode == "exploratory":
-        items = await _generate_exploratory(req.query, req.profile)
-    else:  # outfit (default)
-        items = await _generate_outfit(req.query, req.profile)
-
-    return QueryResponse(mode=mode, query=req.query, items=items)
-
-
-@app.post("/shop-vibe", response_model=VibeResponse)
-async def get_vibe_recommendations(req: VibeRequest):
-    """Legacy outfit endpoint — kept for backward compatibility."""
-    items = await _generate_outfit(req.vibe, req.profile)
     return VibeResponse(vibe=req.vibe, items=items)
 
 
@@ -1223,7 +912,7 @@ async def refresh_product(req: RefreshRequest):
     item_info = {"item": req.item}
     loop = asyncio.get_event_loop()
     sr = await loop.run_in_executor(
-        _executor, search_product, item_info, req.budget, req.exclude_links, "", req.max_price
+        _executor, search_product, item_info, req.budget, req.exclude_links
     )
     if not sr["link"] or not sr.get("price") or not sr.get("image_url"):
         raise HTTPException(status_code=404, detail="No more alternatives found")
