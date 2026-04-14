@@ -903,10 +903,28 @@ function wireCardActions(card) {
   }
 }
 
-let currentQueryContext = { query: '', mode: '' };
+let currentQueryContext = { query: '', mode: '', maxPrice: null };
+
+// Mirror of Python _extract_max_price — parse a natural-language cap from the query
+function extractMaxPrice(text) {
+  if (!text) return null;
+  const t = text.toLowerCase().replace(/,/g, '');
+  const patterns = [
+    /(?:under|below|less than|max|maximum|up to|sub[- ]?|budget(?: of)?)\s*\$?\s*(\d+)/,
+    /\$?\s*(\d+)\s*(?:or less|or under|max|maximum)/,
+  ];
+  for (const pat of patterns) {
+    const m = t.match(pat);
+    if (m) {
+      const val = parseInt(m[1], 10);
+      if (val >= 20 && val <= 20000) return val;
+    }
+  }
+  return null;
+}
 
 function renderProducts(vibe, items, mode) {
-  currentQueryContext = { query: vibe, mode: mode || '' };
+  currentQueryContext = { query: vibe, mode: mode || '', maxPrice: extractMaxPrice(vibe) };
   document.getElementById('shop-vibe-text').textContent = vibe;
   const labelEl = document.getElementById('shop-vibe-label');
   if (mode === 'piece') labelEl.textContent = 'Options for';
@@ -1021,6 +1039,7 @@ async function refreshCard(card) {
         product: card._searchInfo.product,
         budget: budget,
         exclude_links: card._allLinks,
+        max_price: (card._queryContext && card._queryContext.maxPrice) || null,
       }),
     });
     if (!res.ok) {
