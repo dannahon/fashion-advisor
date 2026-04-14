@@ -486,12 +486,19 @@ def _extract_dollar_price(text: str) -> str:
 def _is_category_url(url: str) -> bool:
     """Check if a URL looks like a category/collection page rather than a product page."""
     lower = url.lower()
+    # If the URL clearly points to a product, skip category checks entirely.
+    # (handles cases like mrporter.com/en-us/mens/product/... where /mens/ would
+    # otherwise false-positive as a category signal)
+    product_signals = ("/product/", "/products/", "/prod/", "/item/", "/itm/")
+    if any(s in lower for s in product_signals):
+        return False
     category_signals = (
         "/collections/", "/collection/", "/category/", "/categories/",
-        "/shop/", "/search", "/browse/", "/c/", "/plp/",
+        "/shop/", "/shop-by/", "/search", "/browse/", "/c/", "/plp/",
         "/buy/", "/mens-", "/womens-", "/all-",
         "/mens/", "/womens/", "/accessories/", "/clothing/",
         "/shoes/", "/bags/", "/sale/",
+        "/men/", "/women/", "/designer/", "/designers/", "/brand/", "/brands/",
         "?q=", "?query=", "?search=",
     )
     # Also catch URLs that end at a category level with no product slug
@@ -520,6 +527,7 @@ def _is_bad_title(title: str) -> bool:
         "top 10", "top 5", "how to", "guide", "slim vs",
         "shop men", "shop women", "shop all", "browse ",
         "| all ", "collection |", "collections |",
+        " for men", " for women",
     )
     return any(s in lower for s in bad_signals)
 
@@ -597,6 +605,7 @@ def search_product(item_info, budget="", exclude_links=None, shoe_size="") -> di
             link = r.get("link", "")
             title = r.get("title", "")
             lower = link.lower()
+            title_lower = title.lower()
             if link in exclude_set:
                 continue
             if any(p in lower for p in skip_paths):
@@ -607,6 +616,12 @@ def search_product(item_info, budget="", exclude_links=None, shoe_size="") -> di
                 continue
             if _is_bad_title(title):
                 continue
+            # Filter out women's results (title or URL path signals)
+            if ("/women/" in lower or "/womens/" in lower or "/ladies/" in lower
+                    or "women" in title_lower or "ladies" in title_lower):
+                # But allow if explicitly "men's" / "for men" too (hybrid listings)
+                if "men's" not in title_lower and "mens" not in title_lower:
+                    continue
 
             # Extract price
             price = ""
