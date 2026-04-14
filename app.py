@@ -125,6 +125,12 @@ SLOT RULES:
 - "shoes": any footwear — sneakers, loafers, boots, dress shoes.
 - "accessory": small add-ons like belts, ties, bolo ties, pocket squares, watches, sunglasses, hats, cowboy hats, scarves, socks. A polo, sweater, or knit shirt is NEVER an accessory — those are "top".
 
+CRITICAL — these three slots are MANDATORY in every output, no exceptions:
+- Exactly 1 object with "slot": "top"
+- Exactly 1 object with "slot": "bottom"
+- Exactly 1 object with "slot": "shoes"
+Never omit any of these, even if you think the wearer "obviously" already owns one (a basic white tee, dark jeans, etc). The user sees ONLY what you output — a missing slot means a missing piece in their outfit. If a slot would be a generic basic for this vibe, include it anyway with a brand commitment to the best version of that basic.
+
 Cover a full outfit: outerwear (if needed), exactly 1 top, exactly 1 bottom, exactly 1 pair of shoes, and 1-3 accessories. Use 3 accessories when the occasion authentically calls for it (e.g. belt + bolo + cowboy hat for a ranch wedding, belt + watch + pocket square for black-tie). Do NOT force accessories that don't belong.
 
 Scenario specifics:
@@ -753,28 +759,26 @@ def search_product(item_info, budget="", exclude_links=None, shoe_size="", site_
                     continue
 
             # Extract price.
-            # SerpAPI's detected_extensions.price is a bare number with NO
-            # currency info, so trusting it directly let Korean Won / Yen /
-            # Euro prices through wearing a $ prefix. We require the raw
-            # extension strings to actually contain a $ before believing
-            # the numeric value, and otherwise fall back to regex extraction
-            # which only matches $-prefixed amounts.
+            # By the time we're here the URL has passed the non-US hostname
+            # filter and the locale-path filter, so the numeric
+            # detected_extensions.price field is overwhelmingly USD. The
+            # $20k sanity cap below catches anything that still slips
+            # through. We do NOT gate on a literal $ in the extensions
+            # strings because SerpAPI doesn't always populate them, and
+            # doing so was dropping legit US results.
             price = ""
             rich = r.get("rich_snippet") or {}
             bottom = rich.get("bottom") or {}
             exts = bottom.get("detected_extensions") or {}
-            ext_strings = bottom.get("extensions") or []
-            has_usd_signal = any('$' in (s or '') for s in ext_strings)
-
-            if has_usd_signal and exts.get("price"):
+            if exts.get("price"):
                 p = exts['price']
                 price = f"${p:,.0f}" if p == int(p) else f"${p:,.2f}"
-            elif has_usd_signal and exts.get("price_from"):
+            elif exts.get("price_from"):
                 p = exts['price_from']
                 price = f"${p:,.0f}" if p == int(p) else f"${p:,.2f}"
             else:
-                # Strict: parse first $XX from extensions list
-                for ext_str in ext_strings:
+                # Fallback: parse first $XX from extensions list
+                for ext_str in (bottom.get("extensions") or []):
                     extracted = _extract_dollar_price(ext_str)
                     if extracted:
                         price = extracted
@@ -1005,18 +1009,53 @@ Return a JSON array of 5-8 item descriptions WITH brand commitments. Remember: O
     except (json.JSONDecodeError, IndexError, ValueError):
         raise HTTPException(status_code=502, detail="Could not build outfit — please try again")
 
-    # JSON validation: warn if Claude omitted any essential slot from the
-    # output. This is the "Claude judgment call" half of the missing-slot
-    # bug — separate from the "search failed" half handled by the retries
-    # below. The diagnostic log at the bottom of this endpoint records both.
+    # JSON validation: if Claude omitted top/bottom/shoes, re-prompt with an
+    # explicit "you forgot these" message. Claude omissions are the leading
+    # cause of shirtless/pantsless outfits (e.g. "first day of law school"
+    # coming back with belt + pants + shoes but no shirt). The re-prompt is
+    # cheap because we're only asking for the missing pieces, not the whole
+    # outfit, and it produces vibe-appropriate items instead of a hardcoded
+    # fallback.
     requested_slots_set = {
         i.get("slot") for i in item_descriptions if isinstance(i, dict)
     }
-    for essential in ("top", "bottom", "shoes"):
-        if essential not in requested_slots_set:
-            logger.warning(
-                f"shop-vibe '{req.vibe}': Claude omitted essential slot '{essential}' from JSON"
+    missing_essentials = [
+        s for s in ("top", "bottom", "shoes") if s not in requested_slots_set
+    ]
+    if missing_essentials:
+        logger.warning(
+            f"shop-vibe '{req.vibe}': Claude omitted {missing_essentials} from JSON — re-prompting"
+        )
+        fixup_message = f"""You generated an outfit for "{req.vibe}" but you forgot to include these required slots: {', '.join(missing_essentials)}.
+
+Return ONLY a JSON array containing exactly {len(missing_essentials)} new object{'s' if len(missing_essentials) > 1 else ''} — one for each missing slot listed above. Use the same format as before (item, slot, brand, product) and match the vibe and cultural tradition of the occasion. Do NOT repeat any of the pieces from your previous output.
+
+Here is what you returned previously (for context, do not repeat these):
+{json.dumps(item_descriptions, indent=2)}
+
+Output ONLY the JSON array of {len(missing_essentials)} new items, nothing else."""
+        try:
+            raw_fixup = ask_claude(VIBE_ITEMS_PROMPT, [{"type": "text", "text": fixup_message}])
+            cleaned_fixup = raw_fixup.strip()
+            if cleaned_fixup.startswith("```"):
+                cleaned_fixup = cleaned_fixup.split("\n", 1)[1]
+                cleaned_fixup = cleaned_fixup.rsplit("```", 1)[0]
+            fstart = cleaned_fixup.find("[")
+            fend = cleaned_fixup.rfind("]")
+            if fstart != -1 and fend != -1:
+                cleaned_fixup = cleaned_fixup[fstart:fend + 1]
+            fixup_items = json.loads(cleaned_fixup)
+            # Merge fixup items into the main list, keeping only ones that
+            # actually fill a missing slot (Claude sometimes over-generates).
+            for fi in fixup_items:
+                if isinstance(fi, dict) and fi.get("slot") in missing_essentials:
+                    item_descriptions.append(fi)
+                    missing_essentials.remove(fi.get("slot"))
+            logger.info(
+                f"shop-vibe '{req.vibe}': re-prompt filled {len(fixup_items)} slots, still missing={missing_essentials}"
             )
+        except Exception as e:
+            logger.error(f"shop-vibe re-prompt failed: {type(e).__name__}: {e}")
 
     # Phase 2: Search for real, in-stock products for each item
     budget = req.profile.budget if req.profile else ""
