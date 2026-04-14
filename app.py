@@ -756,8 +756,183 @@ def _scrape_product_image(url: str, timeout: float = 5.0) -> str:
         return ""
 
 
+def _get_preferred_merchant_fragments(budget: str = "", item_hint: str = "") -> set:
+    """Return merchant-name fragments to prefer in Shopping results.
+    Used to rank shopping_results so curated retailers come first."""
+    if _is_athletic_item(item_hint):
+        pool = RETAILERS["athletic"] + RETAILERS["budget"] + RETAILERS["mid"]
+    elif budget == "budget":
+        pool = RETAILERS["budget"] + RETAILERS["mid"] + RETAILERS["shoes"]
+    elif budget == "luxury":
+        pool = RETAILERS["premium"] + RETAILERS["mid"] + RETAILERS["shoes"]
+    else:
+        pool = RETAILERS["mid"] + RETAILERS["premium"] + RETAILERS["shoes"] + RETAILERS["budget"]
+    frags = set()
+    for domain in pool:
+        # "mrporter.com" → "mrporter"; "saksfifthavenue.com" → "saksfifthavenue"
+        base = domain.lower().split(".")[0].replace("-", "").replace("www", "")
+        if base:
+            frags.add(base)
+    return frags
+
+
+def _resolve_merchant_link(token: str, preferred_frags: set, exclude_set: set, max_price: Optional[int]) -> dict:
+    """Fetch immersive product details for a shopping result and pick the best store.
+    Returns {link, price, extracted_price, merchant} or empty dict on failure.
+
+    'Best' means: a store whose name matches our preferred retailer list, priced
+    under max_price. Falls back to the first viable store if no preferred match."""
+    empty = {"link": "", "price": "", "extracted_price": 0.0, "merchant": ""}
+    try:
+        detail = GoogleSearch({
+            "engine": "google_immersive_product",
+            "page_token": token,
+            "api_key": SERPAPI_KEY,
+        }).get_dict()
+    except Exception as e:
+        logger.warning(f"google_immersive_product failed: {e}")
+        return empty
+
+    stores = (detail.get("product_results") or {}).get("stores") or []
+    if not stores:
+        return empty
+
+    def store_passes(s):
+        link = s.get("link", "")
+        if not link or link in exclude_set:
+            return False
+        # Never send users to a category page via a Google redirect
+        lower = link.lower()
+        if _is_category_url(lower):
+            return False
+        if _is_women_only(lower, s.get("title") or ""):
+            return False
+        sp = s.get("extracted_price")
+        if max_price and sp and sp > max_price * 1.05:
+            return False
+        return True
+
+    def normalized_name(s):
+        return (s.get("name") or "").lower().replace(" ", "").replace(".", "").replace("-", "")
+
+    # Pass 1: first preferred store that passes filters
+    for s in stores:
+        if not store_passes(s):
+            continue
+        if any(frag in normalized_name(s) for frag in preferred_frags):
+            return {
+                "link": s["link"],
+                "price": s.get("price") or "",
+                "extracted_price": float(s.get("extracted_price") or 0),
+                "merchant": s.get("name") or "",
+            }
+
+    # Pass 2: any viable store
+    for s in stores:
+        if not store_passes(s):
+            continue
+        return {
+            "link": s["link"],
+            "price": s.get("price") or "",
+            "extracted_price": float(s.get("extracted_price") or 0),
+            "merchant": s.get("name") or "",
+        }
+
+    return empty
+
+
+def _search_shopping(query: str, exclude_set: set, preferred_frags: set, max_price: Optional[int]) -> dict:
+    """Primary search path: SerpAPI google_shopping engine.
+
+    Two-step flow:
+    1. google_shopping → get product candidates with thumbnails + prices
+    2. google_immersive_product → resolve the direct merchant URL from the
+       store list (Google Shopping results only expose Google's internal
+       redirect as a link; the immersive endpoint has per-store direct URLs)
+
+    Returns a product dict {title, link, price, image_url} or empty dict."""
+    empty = {"title": "", "link": "", "price": "", "image_url": ""}
+    try:
+        params = {
+            "engine": "google_shopping",
+            "q": query,
+            "api_key": SERPAPI_KEY,
+            "num": 40,
+            "gl": "us",
+            "hl": "en",
+        }
+        if max_price:
+            params["tbs"] = f"mr:1,price:1,ppr_max:{int(max_price)}"
+        data = GoogleSearch(params).get_dict()
+    except Exception as e:
+        logger.warning(f"google_shopping API call failed for {query!r}: {e}")
+        return empty
+
+    shopping_results = data.get("shopping_results") or []
+    if not shopping_results:
+        return empty
+
+    # Soft merchant preference: rank candidates with curated retailers first
+    def merchant_rank(r):
+        source = (r.get("source") or "").lower().replace(" ", "").replace(".", "")
+        return 0 if any(frag in source for frag in preferred_frags) else 1
+    shopping_results.sort(key=merchant_rank)
+
+    # Try up to 5 candidates — each extra immersive call costs a SerpAPI credit
+    for r in shopping_results[:5]:
+        title = r.get("title") or ""
+        thumbnail = r.get("thumbnail") or ""
+        extracted_price = r.get("extracted_price")
+        token = r.get("immersive_product_page_token")
+
+        if not title or not thumbnail:
+            continue
+        # Shopping-level max price check (before we spend a credit on immersive)
+        if max_price and extracted_price and extracted_price > max_price * 1.05:
+            continue
+        if _is_women_only("", title):
+            continue
+
+        # Resolve direct merchant link
+        if token:
+            merchant_info = _resolve_merchant_link(token, preferred_frags, exclude_set, max_price)
+            if merchant_info["link"]:
+                display_price = merchant_info["price"] or r.get("price") or ""
+                if not display_price and extracted_price:
+                    p = float(extracted_price)
+                    display_price = f"${p:,.0f}" if p == int(p) else f"${p:,.2f}"
+                return {
+                    "title": title,
+                    "link": merchant_info["link"],
+                    "price": display_price,
+                    "image_url": thumbnail,
+                }
+
+        # No token or no viable store — fall back to Google product_link
+        # (two-click nav to merchant but better than nothing)
+        fallback = r.get("product_link") or ""
+        if fallback and fallback not in exclude_set:
+            display_price = r.get("price") or ""
+            if not display_price and extracted_price:
+                p = float(extracted_price)
+                display_price = f"${p:,.0f}" if p == int(p) else f"${p:,.2f}"
+            if display_price:
+                return {
+                    "title": title,
+                    "link": fallback,
+                    "price": display_price,
+                    "image_url": thumbnail,
+                }
+
+    return empty
+
+
 def search_product(item_info, budget="", exclude_links=None, shoe_size="", max_price: Optional[int] = None) -> dict:
-    """Search for a real, in-stock product using SerpAPI Google organic + images.
+    """Search for a real, in-stock product.
+
+    Primary: SerpAPI google_shopping engine (product index — no category pages,
+    real merchant thumbnails, native price filtering).
+    Fallback: SerpAPI google organic with site: restriction (legacy path).
 
     max_price (if set) is a hard ceiling in USD — results priced above it are skipped."""
     if exclude_links is None:
@@ -772,28 +947,28 @@ def search_product(item_info, budget="", exclude_links=None, shoe_size="", max_p
         product = item_info.get("product", "")
         slot = item_info.get("slot", "")
 
-    # Build item query (no brand bias — let the site: filter handle sourcing)
     query = f"men's {item}"
-    # Append shoe size for footwear queries to favor in-stock results
     if shoe_size and slot == "shoes":
         query += f" size {shoe_size}"
-    # Hint the search engine at the price range — helps bias toward in-budget results
-    if max_price:
-        query += f" under ${max_price}"
-
-    # Build site-restricted search query (pass item text for athletic detection)
-    site_filter = _get_site_query(budget, item_hint=item)
-
-    skip_paths = ("/blog/", "/blogs/", "/article/", "/wiki/", "/news/",
-                  "/review/", "/magazine/", "/editorial/", "/guide/")
 
     result = {"query": query, "title": "", "link": "", "price": "", "image_url": ""}
 
-    # Organic search for product link + price
+    # 1) Primary: google_shopping
+    preferred_frags = _get_preferred_merchant_fragments(budget, item_hint=item)
+    shopping_hit = _search_shopping(query, exclude_set, preferred_frags, max_price)
+    if shopping_hit["link"]:
+        result.update(shopping_hit)
+        return result
+
+    # 2) Fallback: organic search with site: restriction
+    organic_query = query + (f" under ${max_price}" if max_price else "")
+    site_filter = _get_site_query(budget, item_hint=item)
+    skip_paths = ("/blog/", "/blogs/", "/article/", "/wiki/", "/news/",
+                  "/review/", "/magazine/", "/editorial/", "/guide/")
     try:
         search = GoogleSearch({
             "engine": "google",
-            "q": f"{query} ({site_filter})",
+            "q": f"{organic_query} ({site_filter})",
             "api_key": SERPAPI_KEY,
             "num": 15,
             "gl": "us",
@@ -828,18 +1003,14 @@ def search_product(item_info, budget="", exclude_links=None, shoe_size="", max_p
                 p = exts['price_from']
                 price = f"${p:,.0f}" if p == int(p) else f"${p:,.2f}"
             else:
-                # Fallback: parse first $XX from extensions list
                 for ext_str in (bottom.get("extensions") or []):
                     extracted = _extract_dollar_price(ext_str)
                     if extracted:
                         price = extracted
                         break
 
-            # Skip results without a clear dollar price
             if not price or not price.startswith("$"):
                 continue
-
-            # Enforce hard price ceiling — small slack (5%) to absorb rounding/display noise
             if max_price:
                 val = _price_to_float(price)
                 if val > max_price * 1.05:
@@ -849,14 +1020,12 @@ def search_product(item_info, budget="", exclude_links=None, shoe_size="", max_p
             result["link"] = link
             result["price"] = price
             break
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(f"organic fallback failed for {query!r}: {e}")
 
-    # Image: try scraping OG image from the product page first (ensures match)
-    if result["link"]:
+    # Fallback image: try OG scrape, then Google Images
+    if result["link"] and not result["image_url"]:
         result["image_url"] = _scrape_product_image(result["link"])
-
-        # Fallback: Google Images search if scraping failed
         if not result["image_url"]:
             try:
                 img_query = f"{brand} {product or item}" if brand else item
