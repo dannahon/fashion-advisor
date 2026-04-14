@@ -100,32 +100,43 @@ IMPORTANT: When recommending specific brands or products, include direct links t
 VIBE_ITEMS_PROMPT = SYSTEM_PROMPT + """
 You are helping a user shop for a complete outfit based on a vibe or occasion they describe.
 
-You MUST respond with ONLY a valid JSON array of 5-7 objects. No markdown, no explanation, no preamble — just the JSON array.
+You MUST respond with ONLY a valid JSON array of 5-8 objects. No markdown, no explanation, no preamble — just the JSON array.
 
 Each object must have:
-- "item": a specific, searchable garment or accessory description (style, color, fabric, fit). Be specific enough that searching for it on a retailer's site would find the right kind of product.
-- "slot": one of "outerwear", "top", "bottom", "shoes", or "accessory" — indicates what part of the outfit this is.
+- "item": a specific garment or accessory description (style, color, fabric, fit).
+- "slot": one of "outerwear", "top", "bottom", "shoes", or "accessory".
+- "brand": a specific brand that is authentic to this item AND this occasion. Commit to a brand that actually makes a great version of this piece within the relevant cultural/regional tradition.
+- "product": if you know a specific product/model name from that brand, include it (e.g. "K-Jacket", "Jackson Boot"). Otherwise empty string.
 
-SLOT RULES — follow these strictly:
+CULTURAL AUTHENTICITY — this is the most important instruction:
+Commit to pieces and brands that match the actual regional or cultural tradition of the occasion. Do NOT default to generic Italian coastal prep for every query. Match the setting:
+- Texas ranch wedding → western wear: pearl-snap shirts, dark selvedge denim or dressy western trousers, western boots, tooled-leather belt with western buckle, bolo tie, felt cowboy hat. Brands like Freenote Cloth, Tecovas, Lucchese, Tellason, Stetson, Yellowstone Ranch Store, Nocona.
+- Italian Riviera wedding → Milanese/coastal tailoring: unstructured linen blazer, open-collar linen shirt, pleated linen trousers, tassel loafers. Brands like Boglioli, Luca Faloni, Incotex, Drake's, Crockett & Jones.
+- Japanese archival streetwear → Needles, Visvim, Junya Watanabe, Comme des Garçons, WTAPS.
+- PNW tech worker → Patagonia, Filson, Danner, Outdoor Research, Arc'teryx.
+- Los Angeles dinner → Buck Mason, Aime Leon Dore, Bode, John Elliott.
+Pull from your knowledge of the menswear tradition for wherever and whatever the user is describing — the examples above are a pattern to follow, not a closed list.
+
+SLOT RULES:
 - "outerwear": jackets, blazers, coats, vests, overshirts. Skip if not needed for the vibe.
 - "top": shirts, t-shirts, polos, sweaters, henleys — anything worn on the upper body as the main layer.
 - "bottom": trousers, pants, jeans, chinos, shorts.
 - "shoes": any footwear — sneakers, loafers, boots, dress shoes.
-- "accessory": ONLY small add-ons like belts, watches, sunglasses, ties, pocket squares, hats, scarves, socks. A polo, sweater, or knit shirt is NEVER an accessory — those are "top".
+- "accessory": small add-ons like belts, ties, bolo ties, pocket squares, watches, sunglasses, hats, cowboy hats, scarves, socks. A polo, sweater, or knit shirt is NEVER an accessory — those are "top".
 
-Do NOT include brand names — the system will search across a curated set of retailers automatically. Focus purely on describing the right ITEMS for the vibe.
+Cover a full outfit: outerwear (if needed), exactly 1 top, exactly 1 bottom, exactly 1 pair of shoes, and 1-3 accessories. Use 3 accessories when the occasion authentically calls for it (e.g. belt + bolo + cowboy hat for a ranch wedding, belt + watch + pocket square for black-tie). Do NOT force accessories that don't belong.
 
-Cover a full outfit: outerwear (if needed), exactly 1 top, exactly 1 bottom, exactly 1 pair of shoes, and 1-2 accessories.
-
-Think carefully about what the occasion ACTUALLY calls for:
+Scenario specifics:
 - Boat day / beach / pool → swim trunks as the bottom, skip belts, skip outerwear
 - Gym / workout → athletic shorts or joggers, performance top, trainers
 - Black tie → tuxedo pieces, dress shoes, bow tie
 - Casual → don't force a belt or tie if they don't add to the look
-Only recommend accessories that genuinely complete the outfit for that specific scenario.
 
-Example output:
-[{"item": "unstructured navy linen blazer", "slot": "outerwear"}, {"item": "white linen spread-collar shirt", "slot": "top"}, {"item": "cream cotton chinos slim fit", "slot": "bottom"}, {"item": "brown leather penny loafers", "slot": "shoes"}, {"item": "navy knit silk tie", "slot": "accessory"}, {"item": "white linen pocket square", "slot": "accessory"}]
+Example — Texas ranch wedding:
+[{"item": "pearl-snap chambray western shirt", "slot": "top", "brand": "Freenote Cloth", "product": "Calico Western Shirt"}, {"item": "dark indigo selvedge denim slim straight", "slot": "bottom", "brand": "Tellason", "product": "Stock Selvedge"}, {"item": "tan cowhide western roper boots", "slot": "shoes", "brand": "Tecovas", "product": "The Jackson"}, {"item": "tooled tan leather belt with western buckle", "slot": "accessory", "brand": "Lucchese", "product": ""}, {"item": "silver-tipped braided leather bolo tie", "slot": "accessory", "brand": "Yellowstone Ranch Store", "product": ""}, {"item": "sand felt open-road cowboy hat", "slot": "accessory", "brand": "Stetson", "product": "Open Road"}]
+
+Example — Italian Riviera wedding:
+[{"item": "unstructured navy linen K-jacket", "slot": "outerwear", "brand": "Boglioli", "product": "K-Jacket"}, {"item": "white linen spread-collar shirt", "slot": "top", "brand": "Luca Faloni", "product": "Versilia Linen Shirt"}, {"item": "cream cotton-linen pleated trousers", "slot": "bottom", "brand": "Incotex", "product": ""}, {"item": "brown suede tassel loafers", "slot": "shoes", "brand": "Crockett & Jones", "product": "Cavendish"}, {"item": "navy silk knit tie", "slot": "accessory", "brand": "Drake's", "product": ""}]
 """
 
 
@@ -581,7 +592,12 @@ def _scrape_product_image(url: str, timeout: float = 5.0) -> str:
 
 
 def search_product(item_info, budget="", exclude_links=None, shoe_size="") -> dict:
-    """Search for a real, in-stock product using SerpAPI Google organic + images."""
+    """Search for a real, in-stock product using SerpAPI Google organic + og:image.
+
+    Uses Claude's committed brand/product when available for cultural specificity,
+    and trusts Google ranking + a skip_domains list for curation rather than a
+    hard site: filter (which previously capped Claude to a fixed retailer pool
+    and killed brand-authentic picks like Tecovas, Stetson, Freenote, etc.)."""
     if exclude_links is None:
         exclude_links = []
     exclude_set = set(exclude_links)
@@ -594,15 +610,24 @@ def search_product(item_info, budget="", exclude_links=None, shoe_size="") -> di
         product = item_info.get("product", "")
         slot = item_info.get("slot", "")
 
-    # Build item query (no brand bias — let the site: filter handle sourcing)
-    query = f"men's {item}"
+    # Build query — prefer Claude's brand+product commitment for cultural fit
+    if brand and product:
+        query = f"{brand} {product}"
+    elif brand:
+        query = f"{brand} {item}"
+    else:
+        query = f"men's {item}"
     # Append shoe size for footwear queries to favor in-stock results
     if shoe_size and slot == "shoes":
         query += f" size {shoe_size}"
 
-    # Build site-restricted search query (pass item text for athletic detection)
-    site_filter = _get_site_query(budget, item_hint=item)
-
+    # Quality filter: skip resale marketplaces, social sites, and content farms.
+    # Google's ranking naturally surfaces authoritative retailers at the top.
+    skip_domains = ("poshmark.com", "ebay.", "etsy.com", "pinterest.",
+                    "reddit.com", "youtube.com", "facebook.com", "instagram.com",
+                    "twitter.com", "x.com/", "wikipedia.org", "tiktok.com",
+                    "therealreal.com", "grailed.com", "vestiairecollective.",
+                    "amazon.com/dp", "walmart.com", "target.com")
     skip_paths = ("/blog/", "/blogs/", "/article/", "/wiki/", "/news/",
                   "/review/", "/magazine/", "/editorial/", "/guide/")
 
@@ -612,7 +637,7 @@ def search_product(item_info, budget="", exclude_links=None, shoe_size="") -> di
     try:
         search = GoogleSearch({
             "engine": "google",
-            "q": f"{query} ({site_filter})",
+            "q": f"{query} buy",
             "api_key": SERPAPI_KEY,
             "num": 15,
             "gl": "us",
@@ -624,6 +649,8 @@ def search_product(item_info, budget="", exclude_links=None, shoe_size="") -> di
             lower = link.lower()
             title_lower = title.lower()
             if link in exclude_set:
+                continue
+            if any(d in lower for d in skip_domains):
                 continue
             if any(p in lower for p in skip_paths):
                 continue
@@ -821,7 +848,7 @@ async def get_vibe_recommendations(req: VibeRequest):
     except Exception:
         context, metadatas = "", []
 
-    items_message = f"""Here are relevant excerpts from the Die, Workwear! blog:
+    items_message = f"""Here are relevant excerpts from menswear writing — use them to ground yourself in the cultural and stylistic context of this occasion:
 
 {context}
 
@@ -829,7 +856,9 @@ async def get_vibe_recommendations(req: VibeRequest):
 
 The user wants to dress for this vibe/occasion: "{req.vibe}"
 {format_profile(req.profile)}
-Return a JSON array of 5-7 item descriptions for a complete outfit that nails this vibe. Remember: ONLY output the JSON array, nothing else."""
+Commit to an authentic look for this specific occasion, drawing on the excerpts above AND your knowledge of regional/cultural menswear. Do NOT default to generic Italian coastal prep — match the actual tradition of the place, culture, and setting described.
+
+Return a JSON array of 5-8 item descriptions WITH brand commitments. Remember: ONLY output the JSON array, nothing else."""
 
     try:
         raw_items = ask_claude(VIBE_ITEMS_PROMPT, [{"type": "text", "text": items_message}])
@@ -891,11 +920,18 @@ Return a JSON array of 5-7 item descriptions for a complete outfit that nails th
             slot=slot,
         ))
 
-    # Retry failed essential slots once (different random retailers)
+    # Retry failed essential slots once — strip brand commitment so the retry
+    # falls back to a generic "men's <item>" search. Claude's first-pick brand
+    # may not be online or may be out of stock, and retrying with the same
+    # brand/product terms would just return the same empty result.
     if failed_essential:
+        retry_items = [
+            {**i, "brand": "", "product": ""} if isinstance(i, dict) else i
+            for i in failed_essential
+        ]
         retry_tasks = [
             loop.run_in_executor(_executor, search_product, item_info, budget, None, shoe_size)
-            for item_info in failed_essential
+            for item_info in retry_items
         ]
         retry_results = await asyncio.gather(*retry_tasks)
         for item_info, sr in zip(failed_essential, retry_results):
