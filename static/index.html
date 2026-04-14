@@ -260,6 +260,29 @@ input::placeholder { color: var(--text-muted); }
 .product-card.accessory-1             { grid-area: accessory1; }
 .product-card.accessory-2             { grid-area: accessory2; }
 
+/* Piece / exploratory mode — simple ranked grid, not mood board */
+.product-grid.piece-mode,
+.product-grid.exploratory-mode {
+  grid-template-areas: none;
+  grid-template-columns: repeat(3, 1fr);
+}
+.product-grid.piece-mode .product-card,
+.product-grid.exploratory-mode .product-card {
+  grid-area: auto !important;
+}
+@media (max-width: 600px) {
+  .product-grid.piece-mode,
+  .product-grid.exploratory-mode {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+@media (max-width: 400px) {
+  .product-grid.piece-mode,
+  .product-grid.exploratory-mode {
+    grid-template-columns: 1fr;
+  }
+}
+
 .product-card {
   background: var(--bg-card);
   border: 1px solid var(--border);
@@ -346,6 +369,30 @@ input::placeholder { color: var(--text-muted); }
 .card-actions .save-btn { color: var(--text-muted); }
 .card-actions .save-btn:hover { color: #e85d75; border-color: #e85d75; background: rgba(232, 93, 117, 0.1); }
 .card-actions .save-btn.saved { color: #e85d75; border-color: #e85d75; background: rgba(232, 93, 117, 0.15); }
+
+.card-actions .more-btn { color: var(--text-muted); }
+.card-actions .more-btn:hover { color: #5db585; border-color: #5db585; background: rgba(93, 181, 133, 0.1); }
+.card-actions .more-btn.active { color: #5db585; border-color: #5db585; background: rgba(93, 181, 133, 0.15); }
+
+.card-actions .less-btn { color: var(--text-muted); }
+.card-actions .less-btn:hover { color: #b58a5d; border-color: #b58a5d; background: rgba(181, 138, 93, 0.1); }
+.card-actions .less-btn.active { color: #b58a5d; border-color: #b58a5d; background: rgba(181, 138, 93, 0.15); }
+
+.card-actions {
+  gap: 12px;
+}
+
+.product-card .product-reason {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  line-height: 1.4;
+  margin-top: 6px;
+  font-style: italic;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
 
 .product-card.refreshing .product-info,
 .product-card.refreshing .product-image,
@@ -584,11 +631,11 @@ input::placeholder { color: var(--text-muted); }
 <div class="main-panel">
   <!-- Input state -->
   <div class="shop-input-zone" id="shop-input-zone">
-    <h2>Describe the vibe</h2>
-    <div class="shop-subtitle">Tell us the occasion or aesthetic and we'll curate the outfit.</div>
+    <h2>What are you shopping for?</h2>
+    <div class="shop-subtitle">Ask for a specific piece, a full outfit for an occasion, or something unexpected.</div>
     <div class="vibe-input-row">
-      <input type="text" id="vibe-input" placeholder="Ranch wedding in Texas...">
-      <button id="vibe-send">Find Looks</button>
+      <input type="text" id="vibe-input" placeholder="Loafers under $400 for Miami summer...">
+      <button id="vibe-send">Find</button>
     </div>
     <div class="vibe-examples" id="vibe-examples"></div>
   </div>
@@ -633,7 +680,7 @@ input::placeholder { color: var(--text-muted); }
   <!-- Results state -->
   <div class="shop-results" id="shop-results">
     <div class="shop-results-header">
-      <div class="vibe-label">Outfit for</div>
+      <div class="vibe-label" id="shop-vibe-label">Outfit for</div>
       <div class="vibe-text" id="shop-vibe-text"></div>
     </div>
     <div class="product-grid" id="product-grid"></div>
@@ -672,26 +719,59 @@ function isPieceSaved(link) {
   return getSavedPieces().some(s => s.link === link);
 }
 
+// ── Feedback log (taste vector input) ───────────────────
+// Persists save / pass / more / less events to localStorage.
+// This becomes the raw signal we build a taste vector from.
+function getFeedbackLog() {
+  try { return JSON.parse(localStorage.getItem('taste_feedback') || '[]'); }
+  catch { return []; }
+}
+
+function logFeedback(item, type, context) {
+  if (!item) return;
+  const log = getFeedbackLog();
+  log.push({
+    type,                                // 'save' | 'pass' | 'more' | 'less'
+    ts: Date.now(),
+    query: context && context.query || '',
+    mode: context && context.mode || '',
+    item: {
+      name: item.name || '',
+      brand: item.brand || '',
+      price: item.price || '',
+      slot: item.slot || '',
+      link: item.link || '',
+      reason: item.reason || '',
+      description: item.description || '',
+    },
+  });
+  // Keep the log bounded so localStorage doesn't bloat.
+  if (log.length > 500) log.splice(0, log.length - 500);
+  localStorage.setItem('taste_feedback', JSON.stringify(log));
+}
+
 // ── Randomized prompt suggestions ────────────────────────
 const ALL_PROMPTS = [
+  // Piece-level
+  { label: "Summer loafers", vibe: "Loafers under $400 for Miami summer" },
+  { label: "Warm winter coats", vibe: "Warm winter coats for walking NYC" },
+  { label: "Black jeans that drape", vibe: "Black jeans with good drape, not skinny" },
+  { label: "Linen shirts", vibe: "Linen shirts for the beach in August" },
+  { label: "White sneakers", vibe: "Clean white leather sneakers under $300" },
+  { label: "Fall knitwear", vibe: "Chunky sweaters for fall weekends" },
+  // Outfit-level
   { label: "Smart casual Friday", vibe: "Smart casual Friday in NYC" },
   { label: "Beach wedding", vibe: "Beach wedding in Positano" },
   { label: "Cocktail bar date", vibe: "First date at a cocktail bar" },
-  { label: "Country club weekend", vibe: "Old money country club weekend" },
   { label: "Job interview", vibe: "Job interview at a creative agency" },
   { label: "Fall in New England", vibe: "Weekend in New England in October" },
-  { label: "Rooftop party", vibe: "Summer rooftop party in downtown LA" },
   { label: "Gallery opening", vibe: "Art gallery opening in Chelsea" },
-  { label: "European vacation", vibe: "Walking around Rome in summer" },
-  { label: "Sunday brunch", vibe: "Upscale brunch spot in Brooklyn" },
-  { label: "Vineyard tour", vibe: "Wine tasting in Napa Valley" },
-  { label: "Ski lodge evening", vibe: "Apres-ski drinks at a mountain lodge" },
-  { label: "Outdoor concert", vibe: "Outdoor concert on a warm evening" },
-  { label: "Business casual", vibe: "Business casual in a modern office" },
-  { label: "Rehearsal dinner", vibe: "Rehearsal dinner at a nice restaurant" },
-  { label: "Hamptons weekend", vibe: "Casual weekend in the Hamptons" },
-  { label: "Coffee date", vibe: "Casual coffee date on a Saturday" },
   { label: "Boat day", vibe: "Day on a friend's boat in Miami" },
+  { label: "Apres-ski", vibe: "Apres-ski drinks at a mountain lodge" },
+  // Exploratory
+  { label: "Surprise me", vibe: "Show me something unexpected for fall" },
+  { label: "Out of my rut", vibe: "Break me out of my style rut" },
+  { label: "New direction", vibe: "Something I wouldn't normally wear but could pull off" },
 ];
 
 function renderPromptChips() {
@@ -727,8 +807,8 @@ document.getElementById('vibe-send').addEventListener('click', sendVibe);
 vibeInput.addEventListener('keydown', e => { if (e.key === 'Enter') sendVibe(); });
 
 async function sendVibe() {
-  const vibe = vibeInput.value.trim();
-  if (!vibe || shopBusy) return;
+  const query = vibeInput.value.trim();
+  if (!query || shopBusy) return;
   shopBusy = true;
   document.getElementById('vibe-send').disabled = true;
 
@@ -736,17 +816,27 @@ async function sendVibe() {
   shopLoading.classList.add('active');
 
   try {
-    const res = await fetch('/shop-vibe', {
+    const res = await fetch('/query', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ vibe, profile: getUserProfile() }),
+      body: JSON.stringify({ query, profile: getUserProfile() }),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       throw new Error(err.detail || 'Request failed');
     }
     const data = await res.json();
-    renderProducts(data.vibe, data.items);
+
+    // Handle clarify mode — show a follow-up question instead of results
+    if (data.mode === 'clarify') {
+      shopLoading.classList.remove('active');
+      shopInputZone.classList.remove('hidden');
+      vibeInput.placeholder = data.clarify;
+      vibeInput.value = '';
+      vibeInput.focus();
+    } else {
+      renderProducts(data.query, data.items, data.mode);
+    }
   } catch (err) {
     shopLoading.classList.remove('active');
     shopInputZone.classList.remove('hidden');
@@ -763,18 +853,28 @@ function buildCardHtml(item) {
     ? '<img class="product-image" src="' + escapeHtml(item.image) + '" alt="' + escapeHtml(item.name) + '">'
     : '';
   const slotLabel = item.slot ? '<div class="slot-label">' + escapeHtml(item.slot) + '</div>' : '';
+  const reasonHtml = item.reason
+    ? '<div class="product-reason">' + escapeHtml(item.reason) + '</div>'
+    : '';
   return imgHtml +
     '<div class="product-info">' +
     slotLabel +
     '<div class="product-name">' + escapeHtml(item.name) + '</div>' +
     '<div class="product-price">' + escapeHtml(item.price) + '</div>' +
+    reasonHtml +
     '</div>' +
     '<div class="card-actions">' +
-    '<button class="skip-btn" title="Skip &mdash; find another">' +
-    '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78L12 21.23l8.84-8.84a5.5 5.5 0 0 0 0-7.78z"/><line x1="4" y1="4" x2="20" y2="20"/></svg>' +
+    '<button class="save-btn' + (saved ? ' saved' : '') + '" title="' + (saved ? 'Unsave' : 'Save') + '" aria-label="Save">' +
+    '<svg width="16" height="16" viewBox="0 0 24 24" ' + (saved ? 'fill="currentColor"' : 'fill="none"') + ' stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78L12 21.23l8.84-8.84a5.5 5.5 0 0 0 0-7.78z"/></svg>' +
     '</button>' +
-    '<button class="save-btn' + (saved ? ' saved' : '') + '" title="' + (saved ? 'Unsave' : 'Save this piece') + '">' +
-    '<svg width="18" height="18" viewBox="0 0 24 24" ' + (saved ? 'fill="currentColor"' : 'fill="none"') + ' stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78L12 21.23l8.84-8.84a5.5 5.5 0 0 0 0-7.78z"/></svg>' +
+    '<button class="skip-btn" title="Pass — find another" aria-label="Pass">' +
+    '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>' +
+    '</button>' +
+    '<button class="more-btn" title="More like this" aria-label="More like this">' +
+    '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 10v12"/><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H7"/></svg>' +
+    '</button>' +
+    '<button class="less-btn" title="Less like this" aria-label="Less like this">' +
+    '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 14V2"/><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H17"/></svg>' +
     '</button>' +
     '</div>';
 }
@@ -782,11 +882,20 @@ function buildCardHtml(item) {
 function wireCardActions(card) {
   card.querySelector('.skip-btn').addEventListener('click', (e) => {
     e.stopPropagation();
+    logFeedback(card._currentItem, 'pass', card._queryContext);
     refreshCard(card);
   });
   card.querySelector('.save-btn').addEventListener('click', (e) => {
     e.stopPropagation();
     toggleSave(card);
+  });
+  card.querySelector('.more-btn').addEventListener('click', (e) => {
+    e.stopPropagation();
+    toggleMore(card);
+  });
+  card.querySelector('.less-btn').addEventListener('click', (e) => {
+    e.stopPropagation();
+    toggleLess(card);
   });
   const img = card.querySelector('.product-image');
   if (img) {
@@ -794,9 +903,19 @@ function wireCardActions(card) {
   }
 }
 
-function renderProducts(vibe, items) {
+let currentQueryContext = { query: '', mode: '' };
+
+function renderProducts(vibe, items, mode) {
+  currentQueryContext = { query: vibe, mode: mode || '' };
   document.getElementById('shop-vibe-text').textContent = vibe;
+  const labelEl = document.getElementById('shop-vibe-label');
+  if (mode === 'piece') labelEl.textContent = 'Options for';
+  else if (mode === 'exploratory') labelEl.textContent = 'Fresh ideas for';
+  else labelEl.textContent = 'Outfit for';
   productGrid.innerHTML = '';
+  productGrid.classList.remove('piece-mode', 'exploratory-mode');
+  if (mode === 'piece') productGrid.classList.add('piece-mode');
+  else if (mode === 'exploratory') productGrid.classList.add('exploratory-mode');
 
   let accessoryCount = 0;
 
@@ -822,6 +941,7 @@ function renderProducts(vibe, items) {
     };
     card._currentItem = item;
     card._allLinks = [item.link];
+    card._queryContext = currentQueryContext;
 
     card.innerHTML = buildCardHtml(item);
 
@@ -848,10 +968,37 @@ function toggleSave(card) {
     btn.querySelector('svg').setAttribute('fill', 'none');
   } else {
     savePiece(item);
+    logFeedback(item, 'save', card._queryContext);
     btn.classList.add('saved');
     btn.title = 'Unsave';
     btn.querySelector('svg').setAttribute('fill', 'currentColor');
   }
+}
+
+function toggleMore(card) {
+  const item = card._currentItem;
+  const moreBtn = card.querySelector('.more-btn');
+  const lessBtn = card.querySelector('.less-btn');
+  if (moreBtn.classList.contains('active')) {
+    moreBtn.classList.remove('active');
+    return;
+  }
+  moreBtn.classList.add('active');
+  lessBtn.classList.remove('active');
+  logFeedback(item, 'more', card._queryContext);
+}
+
+function toggleLess(card) {
+  const item = card._currentItem;
+  const moreBtn = card.querySelector('.more-btn');
+  const lessBtn = card.querySelector('.less-btn');
+  if (lessBtn.classList.contains('active')) {
+    lessBtn.classList.remove('active');
+    return;
+  }
+  lessBtn.classList.add('active');
+  moreBtn.classList.remove('active');
+  logFeedback(item, 'less', card._queryContext);
 }
 
 async function refreshCard(card) {

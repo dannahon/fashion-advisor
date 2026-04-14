@@ -44,6 +44,7 @@ except ImportError:
 _executor = ThreadPoolExecutor(max_workers=8)
 
 CLAUDE_MODEL = "claude-sonnet-4-20250514"
+HAIKU_MODEL = "claude-haiku-4-5-20251001"
 SERPAPI_KEY = os.environ.get("SERPAPI_KEY", "eaf631bccd0471c91ad21097a4c78eb76978dabbc4b88a76825b4d2564c00b6f")
 PINECONE_API_KEY = os.environ.get("PINECONE_API_KEY", "pcsk_2PdVrk_CiVFvEbYqs8ts2GqJ69PMurqFpkeJDBjA1JdoPCzGJ6xvovgtn8jxLHyy5STAbH")
 PINECONE_INDEX = "style-advice"
@@ -126,8 +127,58 @@ Only recommend accessories that genuinely complete the outfit for that specific 
 
 Example output:
 [{"item": "unstructured navy linen blazer", "slot": "outerwear"}, {"item": "white linen spread-collar shirt", "slot": "top"}, {"item": "cream cotton chinos slim fit", "slot": "bottom"}, {"item": "brown leather penny loafers", "slot": "shoes"}, {"item": "navy knit silk tie", "slot": "accessory"}, {"item": "white linen pocket square", "slot": "accessory"}]
+
+For every item, also add a "reason" field: a ≤12-word explanation of why this specific choice fits the vibe. Reference concrete style logic (fabric, color, silhouette, climate). No filler words like "versatile" or "stylish".
 """
 
+INTENT_CLASSIFIER_PROMPT = """You classify men's fashion shopping queries into one of four modes.
+
+- "piece": user wants a single category of item with multiple options to choose from. Examples: "loafers under $400 for Miami summer", "warm coats for NYC winter", "linen shirts for the beach", "black jeans that drape well".
+- "outfit": user wants a full head-to-toe look for a vibe or occasion. Examples: "smart casual Friday", "beach wedding in Positano", "first date at a cocktail bar", "ranch wedding in Texas".
+- "exploratory": user wants fresh ideas outside their usual. Examples: "show me something unexpected for fall", "surprise me", "break me out of my rut", "something I wouldn't normally wear".
+- "clarify": query is too vague to act on without more info. Examples: "clothes", "help", "something nice", "idk".
+
+Respond with ONLY one word: piece, outfit, exploratory, or clarify. No explanation, no punctuation."""
+
+PIECE_ITEMS_PROMPT = SYSTEM_PROMPT + """
+You are helping a user shop for a specific TYPE of item. They've asked for a single category (shoes, shirts, jackets, etc.) and want to see multiple strong options.
+
+You MUST respond with ONLY a valid JSON array of 4-6 objects. No markdown, no explanation, no preamble — just the JSON array.
+
+Each object must have:
+- "item": a specific, searchable garment description (style, color, material, fit). Each item should be a GENUINELY different take on the user's request — different materials, colors, silhouettes, or levels of formality. Not slight tweaks of the same thing.
+- "reason": a ≤12-word explanation of why this specific pick fits their query. Reference concrete style logic (climate, fabric, silhouette, occasion). No filler ("versatile", "stylish", "classic choice").
+
+Do NOT include brand names — the system searches curated retailers automatically.
+
+Example for "loafers under $400 for Miami summer":
+[
+  {"item": "brown suede tassel loafer", "reason": "Summer-weight suede breathes in Miami humidity"},
+  {"item": "navy woven leather loafer", "reason": "Open weave lets heat escape on hot days"},
+  {"item": "cream canvas penny loafer", "reason": "Light color and casual fabric suit resort settings"},
+  {"item": "burgundy horsebit loafer", "reason": "Warm tone adds depth for evening wear"},
+  {"item": "olive suede bit loafer", "reason": "Earthy color pairs with linen and natural fabrics"}
+]
+"""
+
+EXPLORATORY_ITEMS_PROMPT = SYSTEM_PROMPT + """
+The user wants FRESH ideas they wouldn't normally think of — directional picks that broaden their taste without abandoning it.
+
+You MUST respond with ONLY a valid JSON array of 3-5 objects. No markdown, no explanation — just JSON.
+
+Each object must have:
+- "item": a specific, searchable garment description. Push harder than "safe". Reach for a texture, silhouette, or color they might not own yet.
+- "reason": a ≤12-word explanation of why this is worth trying. Reference a concrete aesthetic or use-case, not filler.
+
+Do NOT include brand names. Keep items genuinely wearable — directional but not costumey.
+
+Example:
+[
+  {"item": "slouchy pleated wool trouser in cream", "reason": "Replaces chinos with more drape and winter warmth"},
+  {"item": "shawl-collar chocolate cardigan", "reason": "Softer alternative to a blazer for casual dinners"},
+  {"item": "brown suede chelsea boot with crepe sole", "reason": "Grippier, softer take on a classic silhouette"}
+]
+"""
 
 
 def retrieve_context(query: str, n_results: int = TOP_K) -> tuple:
@@ -246,12 +297,12 @@ def format_profile(profile) -> str:
     return "\n\nUser profile: " + ", ".join(parts) + ". Tailor your advice to their body type and budget preferences."
 
 
-def ask_claude(system: str, user_content: list, max_tokens: int = 2048, temperature: float = 1.0) -> str:
+def ask_claude(system: str, user_content: list, max_tokens: int = 2048, temperature: float = 1.0, model: str = CLAUDE_MODEL) -> str:
     """Send a request to Claude and return the text response."""
     try:
         client = anthropic.Anthropic()
         response = client.messages.create(
-            model=CLAUDE_MODEL,
+            model=model,
             max_tokens=max_tokens,
             temperature=temperature,
             system=system,
@@ -261,6 +312,25 @@ def ask_claude(system: str, user_content: list, max_tokens: int = 2048, temperat
     except Exception as e:
         logger.error(f"Claude API error: {type(e).__name__}: {e}")
         raise
+
+
+def classify_intent(query: str) -> str:
+    """Classify a user query into piece, outfit, exploratory, or clarify.
+    Uses Haiku for speed and cost."""
+    try:
+        result = ask_claude(
+            INTENT_CLASSIFIER_PROMPT,
+            [{"type": "text", "text": query}],
+            max_tokens=10,
+            temperature=0.0,
+            model=HAIKU_MODEL,
+        )
+        mode = result.strip().lower().rstrip(".,!?")
+        if mode in ("piece", "outfit", "exploratory", "clarify"):
+            return mode
+    except Exception as e:
+        logger.error(f"classify_intent failed: {e}")
+    return "outfit"  # safe default
 
 
 # ── FastAPI app ──────────────────────────────────────────────────────────────
@@ -332,6 +402,11 @@ class VibeRequest(BaseModel):
     profile: Optional[UserProfile] = None
 
 
+class QueryRequest(BaseModel):
+    query: str
+    profile: Optional[UserProfile] = None
+
+
 class RefreshRequest(BaseModel):
     item: str
     brand: str = ""
@@ -350,11 +425,19 @@ class ShopItem(BaseModel):
     search_item: str = ""
     search_product: str = ""
     slot: str = ""
+    reason: str = ""  # 12-word "why this for you" explanation
 
 
 class VibeResponse(BaseModel):
     vibe: str
     items: List[ShopItem]
+
+
+class QueryResponse(BaseModel):
+    mode: str  # "piece", "outfit", "exploratory", or "clarify"
+    query: str
+    items: List[ShopItem] = []
+    clarify: str = ""  # follow-up question shown when mode == "clarify"
 
 
 import re as _re
@@ -799,50 +882,46 @@ Please provide specific brand and store recommendations organized by price tier 
     return AdviceResponse(answer=answer)
 
 
-@app.post("/shop-vibe", response_model=VibeResponse)
-async def get_vibe_recommendations(req: VibeRequest):
-    """Get structured shopping recommendations based on a vibe/occasion."""
-    # Phase 1: Claude determines what items are needed for the vibe
-    search_query = f"outfit for {req.vibe} what to wear style"
-    try:
-        context, metadatas = retrieve_context(search_query)
-    except Exception:
-        context, metadatas = "", []
+def _parse_items_json(raw: str) -> list:
+    """Extract and parse a JSON array from Claude's response, tolerant of fences/preamble."""
+    cleaned = raw.strip()
+    if cleaned.startswith("```"):
+        cleaned = cleaned.split("\n", 1)[1]
+        cleaned = cleaned.rsplit("```", 1)[0]
+    start = cleaned.find("[")
+    end = cleaned.rfind("]")
+    if start != -1 and end != -1:
+        cleaned = cleaned[start:end + 1]
+    return json.loads(cleaned)
 
-    items_message = f"""Here are relevant excerpts from the Die, Workwear! blog:
 
-{context}
+def _item_to_shopitem(item_info, sr) -> ShopItem:
+    """Build a ShopItem from a Claude item description + search result."""
+    if isinstance(item_info, str):
+        s_item, slot, reason = item_info, "", ""
+    else:
+        s_item = item_info.get("item", "")
+        slot = item_info.get("slot", "")
+        reason = item_info.get("reason", "")
+    return ShopItem(
+        name=sr["title"],
+        brand="",
+        price=sr["price"],
+        link=sr["link"],
+        description=s_item,
+        image=sr["image_url"],
+        search_item=s_item,
+        search_product="",
+        slot=slot,
+        reason=reason,
+    )
 
----
 
-The user wants to dress for this vibe/occasion: "{req.vibe}"
-{format_profile(req.profile)}
-Return a JSON array of 5-7 item descriptions for a complete outfit that nails this vibe. Remember: ONLY output the JSON array, nothing else."""
-
-    try:
-        raw_items = ask_claude(VIBE_ITEMS_PROMPT, [{"type": "text", "text": items_message}])
-    except Exception as e:
-        logger.error(f"shop-vibe Claude call failed: {type(e).__name__}: {e}")
-        raise HTTPException(status_code=502, detail=f"Style advisor is temporarily unavailable — {type(e).__name__}: {e}")
-
-    try:
-        cleaned = raw_items.strip()
-        # Strip markdown code fences if present
-        if cleaned.startswith("```"):
-            cleaned = cleaned.split("\n", 1)[1]
-            cleaned = cleaned.rsplit("```", 1)[0]
-        # Extract JSON array even if surrounded by text
-        start = cleaned.find("[")
-        end = cleaned.rfind("]")
-        if start != -1 and end != -1:
-            cleaned = cleaned[start:end + 1]
-        item_descriptions = json.loads(cleaned)
-    except (json.JSONDecodeError, IndexError, ValueError):
-        raise HTTPException(status_code=502, detail="Could not build outfit — please try again")
-
-    # Phase 2: Search for real, in-stock products for each item
-    budget = req.profile.budget if req.profile else ""
-    shoe_size = req.profile.shoeSize if req.profile else ""
+async def _search_and_build(item_descriptions: list, profile: Optional[UserProfile], retry_slots=()) -> List[ShopItem]:
+    """Run parallel product searches for a list of item descriptions and return ShopItems.
+    If retry_slots is provided, failed searches for items in those slots get retried once."""
+    budget = profile.budget if profile else ""
+    shoe_size = profile.shoeSize if profile else ""
     loop = asyncio.get_event_loop()
     search_tasks = [
         loop.run_in_executor(_executor, search_product, item_info, budget, None, shoe_size)
@@ -850,59 +929,149 @@ Return a JSON array of 5-7 item descriptions for a complete outfit that nails th
     ]
     search_results = await asyncio.gather(*search_tasks)
 
-    # Build ShopItems from search results
     items = []
-    failed_essential = []  # track essential slots that failed
+    failed_retry = []
     for item_info, sr in zip(item_descriptions, search_results):
-        if isinstance(item_info, str):
-            s_item = item_info
-            slot = "accessory"
-        else:
-            s_item = item_info.get("item", "")
-            slot = item_info.get("slot", "accessory")
-
         if not sr["link"] or not sr.get("price") or not sr.get("image_url"):
-            # If an essential slot failed, queue it for retry
-            if slot in ("top", "bottom", "shoes"):
-                failed_essential.append(item_info)
+            slot = "" if isinstance(item_info, str) else item_info.get("slot", "")
+            if slot in retry_slots:
+                failed_retry.append(item_info)
             continue
+        items.append(_item_to_shopitem(item_info, sr))
 
-        items.append(ShopItem(
-            name=sr["title"],
-            brand="",
-            price=sr["price"],
-            link=sr["link"],
-            description=s_item,
-            image=sr["image_url"],
-            search_item=s_item,
-            search_product="",
-            slot=slot,
-        ))
-
-    # Retry failed essential slots once (different random retailers)
-    if failed_essential:
+    if failed_retry:
         retry_tasks = [
             loop.run_in_executor(_executor, search_product, item_info, budget, None, shoe_size)
-            for item_info in failed_essential
+            for item_info in failed_retry
         ]
         retry_results = await asyncio.gather(*retry_tasks)
-        for item_info, sr in zip(failed_essential, retry_results):
+        for item_info, sr in zip(failed_retry, retry_results):
             if not sr["link"] or not sr.get("price") or not sr.get("image_url"):
                 continue
-            s_item = item_info if isinstance(item_info, str) else item_info.get("item", "")
-            slot = "accessory" if isinstance(item_info, str) else item_info.get("slot", "accessory")
-            items.append(ShopItem(
-                name=sr["title"],
-                brand="",
-                price=sr["price"],
-                link=sr["link"],
-                description=s_item,
-                image=sr["image_url"],
-                search_item=s_item,
-                search_product="",
-                slot=slot,
-            ))
+            items.append(_item_to_shopitem(item_info, sr))
 
+    return items
+
+
+async def _generate_outfit(query: str, profile: Optional[UserProfile]) -> List[ShopItem]:
+    """Generate a full outfit for a vibe/occasion query."""
+    try:
+        context, _ = retrieve_context(f"outfit for {query} what to wear style")
+    except Exception:
+        context = ""
+
+    items_message = f"""Here are relevant excerpts from expert menswear sources:
+
+{context}
+
+---
+
+The user wants to dress for this vibe/occasion: "{query}"
+{format_profile(profile)}
+Return a JSON array of 5-7 item descriptions for a complete outfit that nails this vibe. Remember: ONLY output the JSON array, nothing else."""
+
+    try:
+        raw_items = ask_claude(VIBE_ITEMS_PROMPT, [{"type": "text", "text": items_message}])
+    except Exception as e:
+        logger.error(f"outfit generation failed: {type(e).__name__}: {e}")
+        raise HTTPException(status_code=502, detail=f"Style advisor is temporarily unavailable — {type(e).__name__}: {e}")
+
+    try:
+        item_descriptions = _parse_items_json(raw_items)
+    except (json.JSONDecodeError, IndexError, ValueError):
+        raise HTTPException(status_code=502, detail="Could not build outfit — please try again")
+
+    return await _search_and_build(item_descriptions, profile, retry_slots=("top", "bottom", "shoes"))
+
+
+async def _generate_piece(query: str, profile: Optional[UserProfile]) -> List[ShopItem]:
+    """Generate 4-6 variations of a single item category."""
+    try:
+        context, _ = retrieve_context(query)
+    except Exception:
+        context = ""
+
+    items_message = f"""Here are relevant excerpts from expert menswear sources:
+
+{context}
+
+---
+
+The user is shopping for: "{query}"
+{format_profile(profile)}
+Return a JSON array of 4-6 item variations that give them genuine choice. Remember: ONLY output the JSON array."""
+
+    try:
+        raw_items = ask_claude(PIECE_ITEMS_PROMPT, [{"type": "text", "text": items_message}])
+    except Exception as e:
+        logger.error(f"piece generation failed: {type(e).__name__}: {e}")
+        raise HTTPException(status_code=502, detail=f"Style advisor is temporarily unavailable — {type(e).__name__}: {e}")
+
+    try:
+        item_descriptions = _parse_items_json(raw_items)
+    except (json.JSONDecodeError, IndexError, ValueError):
+        raise HTTPException(status_code=502, detail="Could not build recommendations — please try again")
+
+    return await _search_and_build(item_descriptions, profile)
+
+
+async def _generate_exploratory(query: str, profile: Optional[UserProfile]) -> List[ShopItem]:
+    """Generate 3-5 directional picks the user wouldn't normally think of."""
+    try:
+        context, _ = retrieve_context(query)
+    except Exception:
+        context = ""
+
+    items_message = f"""Here are relevant excerpts from expert menswear sources:
+
+{context}
+
+---
+
+The user wants fresh, unexpected ideas: "{query}"
+{format_profile(profile)}
+Return a JSON array of 3-5 directional picks — each one should broaden their taste without being costumey. Remember: ONLY output the JSON array."""
+
+    try:
+        raw_items = ask_claude(EXPLORATORY_ITEMS_PROMPT, [{"type": "text", "text": items_message}])
+    except Exception as e:
+        logger.error(f"exploratory generation failed: {type(e).__name__}: {e}")
+        raise HTTPException(status_code=502, detail=f"Style advisor is temporarily unavailable — {type(e).__name__}: {e}")
+
+    try:
+        item_descriptions = _parse_items_json(raw_items)
+    except (json.JSONDecodeError, IndexError, ValueError):
+        raise HTTPException(status_code=502, detail="Could not build ideas — please try again")
+
+    return await _search_and_build(item_descriptions, profile)
+
+
+@app.post("/query", response_model=QueryResponse)
+async def unified_query(req: QueryRequest):
+    """Unified entry point: classifies intent and routes to piece/outfit/exploratory."""
+    mode = classify_intent(req.query)
+
+    if mode == "clarify":
+        return QueryResponse(
+            mode="clarify",
+            query=req.query,
+            clarify="Can you tell me more? Are you shopping for a specific item, a full outfit for an occasion, or just looking for fresh ideas?",
+        )
+
+    if mode == "piece":
+        items = await _generate_piece(req.query, req.profile)
+    elif mode == "exploratory":
+        items = await _generate_exploratory(req.query, req.profile)
+    else:  # outfit (default)
+        items = await _generate_outfit(req.query, req.profile)
+
+    return QueryResponse(mode=mode, query=req.query, items=items)
+
+
+@app.post("/shop-vibe", response_model=VibeResponse)
+async def get_vibe_recommendations(req: VibeRequest):
+    """Legacy outfit endpoint — kept for backward compatibility."""
+    items = await _generate_outfit(req.vibe, req.profile)
     return VibeResponse(vibe=req.vibe, items=items)
 
 

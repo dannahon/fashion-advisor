@@ -28,6 +28,17 @@ KNOWN_SOURCES = [
     os.path.expanduser("~/Downloads/permanentstyle_posts.json"),
     os.path.expanduser("~/Downloads/putthison_posts.json"),
     os.path.expanduser("~/Downloads/highsnobiety_posts.json"),
+    os.path.expanduser("~/Downloads/dappered_posts.json"),
+    os.path.expanduser("~/Downloads/effortlessgent_posts.json"),
+    os.path.expanduser("~/Downloads/fashionbeans_posts.json"),
+    os.path.expanduser("~/Downloads/hespokestyle_posts.json"),
+    os.path.expanduser("~/Downloads/hypebeast_posts.json"),
+    os.path.expanduser("~/Downloads/mensfashionmag_posts.json"),
+    os.path.expanduser("~/Downloads/menswearmusings_posts.json"),
+    os.path.expanduser("~/Downloads/opumo_posts.json"),
+    os.path.expanduser("~/Downloads/stylegirlfriend_posts.json"),
+    os.path.expanduser("~/Downloads/thenobledandy_posts.json"),
+    os.path.expanduser("~/Downloads/thevou_posts.json"),
 ]
 
 
