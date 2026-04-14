@@ -544,6 +544,160 @@ _FALLBACK_QUERIES = {
 }
 
 
+# Map any slot string Claude might emit to one of our 5 canonical slots.
+# Claude is told to use "outerwear"/"top"/"bottom"/"shoes"/"accessory" but
+# occasionally returns "Top", "Tops", "Footwear", "Pants", etc. Without
+# normalization the final-guarantee block thinks the slot is missing (and
+# silently doubles up) AND the frontend grid CSS doesn't pin the card to
+# its slot's grid area. Normalize at the JSON-parse boundary so the rest
+# of the pipeline can rely on canonical lowercase values.
+_SLOT_SYNONYMS = {
+    "top": "top", "tops": "top", "shirt": "top", "shirts": "top",
+    "upper": "top", "tee": "top", "sweater": "top",
+    "bottom": "bottom", "bottoms": "bottom", "pants": "bottom",
+    "pant": "bottom", "trouser": "bottom", "trousers": "bottom",
+    "shorts": "bottom", "lower": "bottom", "jeans": "bottom",
+    "shoe": "shoes", "shoes": "shoes", "footwear": "shoes",
+    "boots": "shoes", "sneakers": "shoes",
+    "outerwear": "outerwear", "outer": "outerwear", "jacket": "outerwear",
+    "coat": "outerwear", "blazer": "outerwear",
+    "accessory": "accessory", "accessories": "accessory", "acc": "accessory",
+}
+
+
+def _normalize_slot(raw) -> str:
+    """Map a slot string from Claude's JSON to one of the 5 canonical slots.
+    Returns 'accessory' for unrecognized values rather than '' so the item
+    still renders somewhere rather than landing in a void grid cell."""
+    if not raw:
+        return "accessory"
+    return _SLOT_SYNONYMS.get(str(raw).strip().lower(), "accessory")
+
+
+# Common e-commerce hostnames → human-readable brand names. Used to populate
+# the brand field for cards built via the retry/fallback search paths, which
+# strip Claude's brand commitment to broaden the query and so lose the brand
+# label we'd otherwise show on the card. For unknown hostnames we fall back
+# to capitalizing the domain root.
+_HOSTNAME_BRAND_MAP = {
+    "jcrew.com": "J.Crew",
+    "factory.jcrew.com": "J.Crew Factory",
+    "jcrewfactory.com": "J.Crew Factory",
+    "bonobos.com": "Bonobos",
+    "bananarepublic.com": "Banana Republic",
+    "bananarepublic.gap.com": "Banana Republic",
+    "buckmason.com": "Buck Mason",
+    "toddsnyder.com": "Todd Snyder",
+    "drakes.com": "Drake's",
+    "sidmashburn.com": "Sid Mashburn",
+    "uniqlo.com": "Uniqlo",
+    "everlane.com": "Everlane",
+    "outlier.nyc": "Outlier",
+    "huckberry.com": "Huckberry",
+    "abercrombie.com": "Abercrombie",
+    "ae.com": "American Eagle",
+    "gap.com": "Gap",
+    "macys.com": "Macy's",
+    "nordstrom.com": "Nordstrom",
+    "nordstromrack.com": "Nordstrom Rack",
+    "mrporter.com": "Mr Porter",
+    "endclothing.com": "End Clothing",
+    "ssense.com": "SSENSE",
+    "matchesfashion.com": "Matches",
+    "farfetch.com": "Farfetch",
+    "ralphlauren.com": "Ralph Lauren",
+    "brooksbrothers.com": "Brooks Brothers",
+    "charlestyrwhitt.com": "Charles Tyrwhitt",
+    "ctshirts.com": "Charles Tyrwhitt",
+    "thomaspink.com": "Thomas Pink",
+    "spierandmackay.com": "Spier & Mackay",
+    "taylorstitch.com": "Taylor Stitch",
+    "allenedmonds.com": "Allen Edmonds",
+    "aldenshoe.com": "Alden",
+    "commonprojects.com": "Common Projects",
+    "newbalance.com": "New Balance",
+    "nike.com": "Nike",
+    "adidas.com": "Adidas",
+    "vans.com": "Vans",
+    "converse.com": "Converse",
+    "levi.com": "Levi's",
+    "levis.com": "Levi's",
+    "carhartt.com": "Carhartt",
+    "carharttwip.com": "Carhartt WIP",
+    "patagonia.com": "Patagonia",
+    "lululemon.com": "Lululemon",
+    "savekhaki.com": "Save Khaki",
+    "tecovas.com": "Tecovas",
+    "redwingheritage.com": "Red Wing",
+    "redwingshoes.com": "Red Wing",
+    "llbean.com": "L.L.Bean",
+    "rei.com": "REI",
+    "freenotecloth.com": "Freenote Cloth",
+    "ironheart.us": "Iron Heart",
+    "3sixteen.com": "3sixteen",
+    "noahny.com": "Noah",
+    "aimeleondore.com": "Aimé Leon Dore",
+    "wellbredbrand.com": "Well Bred",
+    "nomanwalksalone.com": "No Man Walks Alone",
+    "stagprovisions.com": "Stag Provisions",
+    "needsupply.com": "Need Supply",
+    "thearmoury.com": "The Armoury",
+    "berg-berg.com": "Berg & Berg",
+    "epauletnewyork.com": "Epaulet",
+    "epaulet.com": "Epaulet",
+    "saintlaurent.com": "Saint Laurent",
+    "ami-paris.com": "Ami",
+    "apc.fr": "A.P.C.",
+    "apcus.com": "A.P.C.",
+    "filson.com": "Filson",
+    "danner.com": "Danner",
+    "thursdayboots.com": "Thursday Boots",
+    "barbour.com": "Barbour",
+    "stetson.com": "Stetson",
+    "wolverine.com": "Wolverine",
+    "rancourtandcompany.com": "Rancourt",
+    "quoddy.com": "Quoddy",
+    "g-h-bass.com": "G.H. Bass",
+    "ghbass.com": "G.H. Bass",
+    "uskeesociety.com": "Uskees",
+    "uskees.com": "Uskees",
+    "stoffaonline.com": "Stoffa",
+    "fairendsus.com": "Fair Ends",
+}
+
+
+def _brand_from_link(link: str) -> str:
+    """Best-effort brand name from a product URL hostname. Returns "" if
+    we can't make a confident guess. Used for retry/fallback search paths
+    that lose Claude's brand commitment along the way."""
+    if not link:
+        return ""
+    try:
+        host = (_urlparse(link).hostname or "").lower()
+    except Exception:
+        return ""
+    if host.startswith("www."):
+        host = host[4:]
+    if not host:
+        return ""
+    # Direct hit on the known-brand map
+    if host in _HOSTNAME_BRAND_MAP:
+        return _HOSTNAME_BRAND_MAP[host]
+    # Try parent domain (subdomain.brand.com → brand.com)
+    parts = host.split(".")
+    if len(parts) >= 2:
+        parent = ".".join(parts[-2:])
+        if parent in _HOSTNAME_BRAND_MAP:
+            return _HOSTNAME_BRAND_MAP[parent]
+    # Last resort: capitalize the domain root, but skip generic platforms
+    # and marketplaces where the hostname isn't a brand at all.
+    root = parts[-2] if len(parts) >= 2 else parts[0]
+    if root in ("amazon", "ebay", "etsy", "google", "shopify", "myshopify",
+                "bigcommerce", "squarespace", "wix"):
+        return ""
+    return root.capitalize()
+
+
 def _extract_dollar_price(text: str) -> str:
     """Extract a clean dollar price from text like '$155.00', '£120', 'From $99', etc."""
     m = _re.search(r'\$\s*(\d[\d,]*(?:\.\d{2})?)', text)
@@ -1131,6 +1285,17 @@ Return a JSON array of 3-5 item descriptions WITH brand commitments. ONLY output
     except (json.JSONDecodeError, IndexError, ValueError):
         raise HTTPException(status_code=502, detail="Could not build outfit — please try again")
 
+    # Normalize slot values at the JSON-parse boundary so the rest of the
+    # pipeline (re-prompt missing-essentials check, final-guarantee block,
+    # frontend grid placement) can rely on the canonical lowercase
+    # vocabulary. Without this, Claude returning "Top" or "Pants" causes
+    # the missing-essentials check to think a top/bottom is missing AND
+    # the final-guarantee to silently fail the de-dup check, producing
+    # outfits with no top in the right grid cell.
+    for desc in item_descriptions:
+        if isinstance(desc, dict):
+            desc["slot"] = _normalize_slot(desc.get("slot"))
+
     # JSON validation: if Claude omitted top/bottom/shoes, re-prompt with an
     # explicit "you forgot these" message. Claude omissions are the leading
     # cause of shirtless/pantsless outfits (e.g. "first day of law school"
@@ -1167,6 +1332,10 @@ Output ONLY the JSON array of {len(missing_essentials)} new items, nothing else.
             if fstart != -1 and fend != -1:
                 cleaned_fixup = cleaned_fixup[fstart:fend + 1]
             fixup_items = json.loads(cleaned_fixup)
+            # Normalize re-prompt slots the same way as the main parse.
+            for fi in fixup_items:
+                if isinstance(fi, dict):
+                    fi["slot"] = _normalize_slot(fi.get("slot"))
             # Merge fixup items into the main list, keeping only ones that
             # actually fill a missing slot (Claude sometimes over-generates).
             for fi in fixup_items:
@@ -1199,7 +1368,7 @@ Output ONLY the JSON array of {len(missing_essentials)} new items, nothing else.
             item_brand = ""
         else:
             s_item = item_info.get("item", "")
-            slot = item_info.get("slot", "accessory")
+            slot = _normalize_slot(item_info.get("slot"))
             item_brand = item_info.get("brand", "")
 
         if not sr["link"] or not sr.get("price") or not sr.get("image_url"):
@@ -1208,9 +1377,12 @@ Output ONLY the JSON array of {len(missing_essentials)} new items, nothing else.
                 failed_essential.append(item_info)
             continue
 
+        # Prefer Claude's brand commitment, else infer from the link's
+        # hostname so the card always has a brand label to show.
+        display_brand = item_brand or _brand_from_link(sr["link"])
         items.append(ShopItem(
             name=sr["title"],
-            brand=item_brand,
+            brand=display_brand,
             price=sr["price"],
             link=sr["link"],
             description=s_item,
@@ -1240,13 +1412,13 @@ Output ONLY the JSON array of {len(missing_essentials)} new items, nothing else.
                 still_failed.append(item_info)
                 continue
             s_item = item_info if isinstance(item_info, str) else item_info.get("item", "")
-            slot = "accessory" if isinstance(item_info, str) else item_info.get("slot", "accessory")
-            # Brand is empty here because the retry stripped Claude's commitment;
-            # the actual product brand isn't easily extractable from the search
-            # result title, so we leave it blank rather than guess.
+            slot = "accessory" if isinstance(item_info, str) else _normalize_slot(item_info.get("slot"))
+            # The retry stripped Claude's brand commitment, so infer the
+            # brand from the result link's hostname rather than leaving the
+            # card label blank.
             items.append(ShopItem(
                 name=sr["title"],
-                brand="",
+                brand=_brand_from_link(sr["link"]),
                 price=sr["price"],
                 link=sr["link"],
                 description=s_item,
@@ -1280,10 +1452,10 @@ Output ONLY the JSON array of {len(missing_essentials)} new items, nothing else.
                 if not sr["link"] or not sr.get("price") or not sr.get("image_url"):
                     continue
                 s_item = item_info if isinstance(item_info, str) else item_info.get("item", "")
-                slot = "accessory" if isinstance(item_info, str) else item_info.get("slot", "accessory")
+                slot = "accessory" if isinstance(item_info, str) else _normalize_slot(item_info.get("slot"))
                 items.append(ShopItem(
                     name=sr["title"],
-                    brand="",
+                    brand=_brand_from_link(sr["link"]),
                     price=sr["price"],
                     link=sr["link"],
                     description=s_item,
@@ -1318,7 +1490,7 @@ Output ONLY the JSON array of {len(missing_essentials)} new items, nothing else.
             if sr["link"] and sr.get("price") and sr.get("image_url"):
                 items.append(ShopItem(
                     name=sr["title"],
-                    brand="",
+                    brand=_brand_from_link(sr["link"]),
                     price=sr["price"],
                     link=sr["link"],
                     description=fq,
@@ -1367,7 +1539,7 @@ async def refresh_product(req: RefreshRequest):
         raise HTTPException(status_code=404, detail="No more alternatives found")
     return ShopItem(
         name=sr["title"],
-        brand="",
+        brand=_brand_from_link(sr["link"]),
         price=sr["price"],
         link=sr["link"],
         description=req.item,
