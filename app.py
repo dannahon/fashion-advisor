@@ -511,14 +511,30 @@ def _get_site_query(budget: str = "", n: int = 8, item_hint: str = "") -> str:
             unique.append(s)
     return " OR ".join(f"site:{s}" for s in unique)
 
-# Last-resort generic queries by slot. Used only when every other search
-# tier has failed for an essential slot — these are the dead-simple "you
-# will not be shirtless" queries that any major US retailer stocks.
-_GENERIC_SLOT_QUERIES = {
-    "top": "men's button-down shirt",
-    "bottom": "men's chinos",
-    "shoes": "men's leather dress shoes",
-    "outerwear": "men's jacket",
+# Last-resort generic queries by slot. Tried in order — each successive
+# query is broader than the last so we always end up with *something* in
+# the essential slots, even if the cultural specificity is gone. Used by
+# the final-guarantee block in /shop-vibe.
+_FALLBACK_QUERIES = {
+    "top": [
+        "men's button-down shirt",
+        "men's oxford shirt",
+        "men's t-shirt",
+    ],
+    "bottom": [
+        "men's chinos",
+        "men's pants",
+        "men's jeans",
+    ],
+    "shoes": [
+        "men's leather dress shoes",
+        "men's loafers",
+        "men's sneakers",
+    ],
+    "outerwear": [
+        "men's jacket",
+        "men's coat",
+    ],
 }
 
 
@@ -587,7 +603,15 @@ def _is_bad_title(title: str) -> bool:
 def _scrape_product_image(url: str, timeout: float = 5.0) -> str:
     """Try to extract the product image from the actual product page.
     Looks for og:image, twitter:image, or common product image meta tags.
-    Returns "" if the product is out of stock (detected via schema.org JSON-LD)."""
+    Returns "" if the product is out of stock (detected via schema.org JSON-LD).
+
+    For pages where og:image points to a generic lookbook/campaign photo
+    instead of the actual product (some Shopify stores do this — e.g.
+    Save Khaki's twill short page sets og:image to a Spring '26 campaign
+    shot, while the real product gallery lives under SKU-named filenames),
+    fall through to gallery images whose filename overlaps with the URL
+    slug.
+    """
     try:
         resp = _requests.get(url, timeout=timeout, headers={
             "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
@@ -607,27 +631,67 @@ def _scrape_product_image(url: str, timeout: float = 5.0) -> str:
                 and "schema.org/instock" not in full_lower):
             return ""
 
-        html = resp.text[:100_000]  # og:image regex only needs the head
+        head_html = resp.text[:100_000]   # head-only for og:image regex
+        full_html = resp.text[:300_000]   # widened for gallery image scan
 
-        # Try og:image first (most reliable for product pages).
+        # Step 1: try og:image first (most reliable for normal product pages).
         # Patterns use [^>]* rather than \s+ between <meta and attributes so they
         # match tags with extra attributes (e.g. React Helmet: <meta data-react-
         # helmet="true" property="og:image" content="...">).
+        og_image = ""
         for pattern in [
             r'<meta[^>]*property=["\']og:image["\'][^>]*content=["\'](https?://[^"\']+)',
             r'<meta[^>]*content=["\'](https?://[^"\']+)["\'][^>]*property=["\']og:image',
             r'<meta[^>]*name=["\']twitter:image["\'][^>]*content=["\'](https?://[^"\']+)',
             r'<meta[^>]*content=["\'](https?://[^"\']+)["\'][^>]*name=["\']twitter:image',
         ]:
-            m = _re.search(pattern, html, _re.IGNORECASE)
+            m = _re.search(pattern, head_html, _re.IGNORECASE)
             if m:
                 img_url = m.group(1)
-                # Skip placeholder/logo images
                 lower = img_url.lower()
-                if any(s in lower for s in ("logo", "favicon", "placeholder", "1x1", "pixel")):
+                if not any(s in lower for s in ("logo", "favicon", "placeholder", "1x1", "pixel")):
+                    og_image = img_url
+                    break
+
+        # Step 2: build slug tokens from the URL's last path segment, with
+        # leading-zero variants. Used to detect whether og:image is actually
+        # this product's image vs. a generic campaign shot.
+        slug = _urlparse(url).path.rstrip("/").split("/")[-1].lower()
+        slug_tokens = set()
+        for t in _re.findall(r"[a-z0-9]{3,}", slug):
+            slug_tokens.add(t)
+            # "sk009071" -> also try "sk9071" (Shopify often drops zero pads)
+            normed = _re.sub(r"(\D)0+(\d)", r"\1\2", t)
+            if normed != t and len(normed) >= 3:
+                slug_tokens.add(normed)
+
+        def _has_slug_overlap(img_url: str) -> bool:
+            fname = img_url.rsplit("/", 1)[-1].lower()
+            return any(t in fname for t in slug_tokens)
+
+        # Step 3: if og:image already references this product's slug, it's
+        # the right image — return it without scanning the gallery.
+        if og_image and slug_tokens and _has_slug_overlap(og_image):
+            return og_image
+
+        # Step 4: og:image is missing or generic. Hunt the gallery for an
+        # image whose filename matches the URL slug. Take the first match
+        # in source order so we get the "main" angle/color.
+        if slug_tokens:
+            for img in _re.findall(
+                r'(https?://[^"\'\s>]+\.(?:jpg|jpeg|png|webp))',
+                full_html,
+                _re.IGNORECASE,
+            ):
+                lower = img.lower()
+                if any(s in lower for s in (
+                        "logo", "favicon", "placeholder", "1x1", "pixel", "icon", "sprite")):
                     continue
-                return img_url
-        return ""
+                if _has_slug_overlap(img):
+                    return img
+
+        # Step 5: fall back to og:image (or empty if even that wasn't found).
+        return og_image
     except Exception:
         return ""
 
@@ -708,7 +772,11 @@ def search_product(item_info, budget="", exclude_links=None, shoe_size="", site_
                     "reddit.com", "youtube.com", "facebook.com", "instagram.com",
                     "twitter.com", "x.com/", "wikipedia.org", "tiktok.com",
                     "therealreal.com", "grailed.com", "vestiairecollective.",
-                    "amazon.com/dp", "walmart.com", "target.com")
+                    "amazon.com/dp", "walmart.com", "target.com",
+                    # Niche/novelty footwear that keeps showing up on generic
+                    # casual-shoe searches but isn't widely appealing
+                    # (woven leather huaraches etc.)
+                    "chamulaoriginal.com")
     skip_paths = ("/blog/", "/blogs/", "/article/", "/wiki/", "/news/",
                   "/review/", "/magazine/", "/editorial/", "/guide/",
                   # Non-US locale path segments — these usually mean a
@@ -766,11 +834,23 @@ def search_product(item_info, budget="", exclude_links=None, shoe_size="", site_
                 continue
             if _is_bad_title(title):
                 continue
-            # Filter out women's results (title or URL path signals)
+            # Filter out women's results (title or URL path signals).
+            # NOTE: "women's" contains "men's" as a substring, so a naive
+            # `"men's" in title_lower` check false-positives on women's
+            # products. Strip the "women" tokens first before the men's
+            # check so a women's flannel pajama set doesn't masquerade as
+            # men's just because its title contains the substring "men's".
             if ("/women/" in lower or "/womens/" in lower or "/ladies/" in lower
                     or "women" in title_lower or "ladies" in title_lower):
-                # But allow if explicitly "men's" / "for men" too (hybrid listings)
-                if "men's" not in title_lower and "mens" not in title_lower:
+                title_no_women = (
+                    title_lower
+                    .replace("women's", "")
+                    .replace("womens", "")
+                    .replace("women", "")
+                )
+                if ("men's" not in title_no_women
+                        and "mens" not in title_no_women
+                        and "for men" not in title_no_women):
                     continue
 
             # Extract price.
@@ -1166,9 +1246,8 @@ Output ONLY the JSON array of {len(missing_essentials)} new items, nothing else.
         # Third retry — fallback for essentials still missing.
         # Forces results into the curated RETAILERS pool via a site: filter.
         # Loses cultural specificity but has very high recall for basics
-        # like a white tee or navy chinos, which is exactly what we need
-        # when the open-web search has already failed twice.
-        truly_failed = []
+        # like a white tee or navy chinos. Anything that still fails gets
+        # picked up by the unconditional final-guarantee block below.
         if still_failed:
             fallback_items = [
                 {**i, "brand": "", "product": ""} if isinstance(i, dict) else i
@@ -1186,7 +1265,6 @@ Output ONLY the JSON array of {len(missing_essentials)} new items, nothing else.
             fallback_results = await asyncio.gather(*fallback_tasks)
             for item_info, sr in zip(still_failed, fallback_results):
                 if not sr["link"] or not sr.get("price") or not sr.get("image_url"):
-                    truly_failed.append(item_info)
                     continue
                 s_item = item_info if isinstance(item_info, str) else item_info.get("item", "")
                 slot = "accessory" if isinstance(item_info, str) else item_info.get("slot", "accessory")
@@ -1202,59 +1280,51 @@ Output ONLY the JSON array of {len(missing_essentials)} new items, nothing else.
                     slot=slot,
                 ))
 
-        # Fourth retry — absolute last resort. The user must never be told
-        # to attend law school in just pants and shoes. Drop Claude's whole
-        # item description and search for a dead-simple slot-generic query
-        # like "men's button-down shirt" that any major US retailer stocks.
-        if truly_failed:
-            generic_items = []
-            for fi in truly_failed:
-                slot_name = "" if isinstance(fi, str) else fi.get("slot", "")
-                generic_q = _GENERIC_SLOT_QUERIES.get(slot_name)
-                if not generic_q:
-                    # No generic query for this slot (e.g. accessory) — skip
-                    generic_items.append(None)
-                    continue
-                generic_items.append({
-                    "item": generic_q,
-                    "brand": "",
-                    "product": "",
-                    "slot": slot_name,
-                })
-            generic_tasks = [
-                (loop.run_in_executor(
-                    _executor, search_product, gi, budget, None, shoe_size
-                ) if gi is not None else None)
-                for gi in generic_items
-            ]
-            for orig, task in zip(truly_failed, generic_tasks):
-                if task is None:
-                    logger.warning(
-                        f"shop-vibe '{req.vibe}': all 4 search attempts failed for "
-                        f"essential slot {orig if isinstance(orig, str) else orig.get('slot', '?')} "
-                        f"(no generic query available)"
-                    )
-                    continue
-                sr = await task
-                slot_name = "accessory" if isinstance(orig, str) else orig.get("slot", "accessory")
-                if not sr["link"] or not sr.get("price") or not sr.get("image_url"):
-                    logger.warning(
-                        f"shop-vibe '{req.vibe}': all 4 search attempts failed for "
-                        f"essential slot {slot_name}"
-                    )
-                    continue
-                s_item = orig if isinstance(orig, str) else orig.get("item", "")
+    # Final guarantee: catch any of top/bottom/shoes that's STILL missing
+    # after all retries above. This block runs unconditionally — not only
+    # when failed_essential was non-empty — so it also catches the case
+    # where Claude omitted the slot from JSON entirely AND the re-prompt
+    # also failed to fill it. Tries a list of progressively-broader
+    # slot-generic queries until one returns a real product. Without this
+    # the user can still get told to attend law school shirtless.
+    delivered_slots_set = {it.slot for it in items}
+    for required_slot in ("top", "bottom", "shoes"):
+        if required_slot in delivered_slots_set:
+            continue
+        fallback_queries = _FALLBACK_QUERIES.get(required_slot, [])
+        filled = False
+        for fq in fallback_queries:
+            sr = await loop.run_in_executor(
+                _executor,
+                search_product,
+                {"item": fq, "brand": "", "product": "", "slot": required_slot},
+                budget,
+                None,
+                shoe_size,
+            )
+            if sr["link"] and sr.get("price") and sr.get("image_url"):
                 items.append(ShopItem(
                     name=sr["title"],
                     brand="",
                     price=sr["price"],
                     link=sr["link"],
-                    description=s_item,
+                    description=fq,
                     image=sr["image_url"],
-                    search_item=s_item,
+                    search_item=fq,
                     search_product="",
-                    slot=slot_name,
+                    slot=required_slot,
                 ))
+                logger.info(
+                    f"shop-vibe '{req.vibe}': final-guarantee filled '{required_slot}' with '{fq}'"
+                )
+                filled = True
+                break
+        if not filled:
+            logger.error(
+                f"shop-vibe '{req.vibe}': FINAL-GUARANTEE FAILED for '{required_slot}' "
+                f"after trying {len(fallback_queries)} fallback queries — "
+                f"essential slot will be missing from the response"
+            )
 
     # Diagnostic: log which slots Claude asked for vs. which ones survived
     # search + retry. Tells us whether the missing-slot bug is Claude
