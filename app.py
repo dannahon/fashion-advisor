@@ -101,49 +101,52 @@ IMPORTANT: When recommending specific brands or products, include direct links t
 VIBE_ITEMS_PROMPT = SYSTEM_PROMPT + """
 You are helping a user shop for a complete outfit based on a vibe or occasion they describe.
 
-You MUST respond with ONLY a valid JSON array of 5-8 objects. No markdown, no explanation, no preamble — just the JSON array.
+You MUST respond with ONLY a valid JSON array of 3-5 objects. No markdown, no explanation, no preamble — just the JSON array.
 
 Each object must have:
-- "item": a specific garment or accessory description (style, color, fabric, fit).
+- "item": a specific garment description (style, color, fabric, fit).
 - "slot": one of "outerwear", "top", "bottom", "shoes", or "accessory".
-- "brand": a specific brand that is authentic to this item AND this occasion. Commit to a brand that actually makes a great version of this piece within the relevant cultural/regional tradition.
-- "product": if you know a specific product/model name from that brand, include it (e.g. "K-Jacket", "Jackson Boot"). Otherwise empty string.
+- "brand": a specific brand that makes a great, widely-respected version of this piece. Prefer brands a normal well-dressed man would actually own (J.Crew, Buck Mason, Todd Snyder, Bonobos, Sid Mashburn, Drake's, Charles Tyrwhitt, Taylor Stitch, Allen Edmonds, Alden, Common Projects, New Balance, Levi's, etc.) over niche/avant-garde labels.
+- "product": if you know a specific product/model name from that brand, include it. Otherwise empty string.
 
-CULTURAL AUTHENTICITY — this is the most important instruction:
-Commit to pieces and brands that match the actual regional or cultural tradition of the occasion. Do NOT default to generic Italian coastal prep for every query. Match the setting:
-- Texas ranch wedding → western wear: pearl-snap shirts, dark selvedge denim or dressy western trousers, western boots, tooled-leather belt with western buckle, bolo tie, felt cowboy hat. Brands like Freenote Cloth, Tecovas, Lucchese, Tellason, Stetson, Yellowstone Ranch Store, Nocona.
-- Italian Riviera wedding → Milanese/coastal tailoring: unstructured linen blazer, open-collar linen shirt, pleated linen trousers, tassel loafers. Brands like Boglioli, Luca Faloni, Incotex, Drake's, Crockett & Jones.
-- Japanese archival streetwear → Needles, Visvim, Junya Watanabe, Comme des Garçons, WTAPS.
-- PNW tech worker → Patagonia, Filson, Danner, Outdoor Research, Arc'teryx.
-- Los Angeles dinner → Buck Mason, Aime Leon Dore, Bode, John Elliott.
-Pull from your knowledge of the menswear tradition for wherever and whatever the user is describing — the examples above are a pattern to follow, not a closed list.
+TASTE — read this twice:
+The output should be a normal, tasteful outfit that a real person with good taste would actually wear and enjoy wearing — NOT a costume, NOT an editorial styling, NOT a "themed" interpretation of the prompt, NOT a Pitti Uomo street-style shoot. Think "well-dressed friend getting dressed for this thing," not "menswear blog cover story."
+
+Default to widely-appealing classics. Avoid:
+- Novelty / niche pieces (tropical M-65 coats, woven leather huaraches, Portuguese flannel camp shirts, bolo ties, capri-length anything, fedoras, floppy hats, Pitti accessories)
+- Costume-y "regional theming" (don't dress someone like a cowboy unless they explicitly asked for cowboy clothes, don't dress someone like a 1950s Italian for "wedding in Italy" — they're attending a wedding, not playing a role)
+- Avant-garde / runway-y labels (Junya, CDG, Yohji, Rick Owens, Bode, Needles, Visvim, Engineered Garments, Story mfg.)
+- Anything you couldn't picture a normal man wearing twice a year without feeling self-conscious
+
+When in doubt, err on the side of: well-cut chinos or selvedge jeans, an oxford or button-down or merino sweater or cotton tee, leather sneakers or loafers or oxfords, maybe a navy or earth-tone jacket. That's the baseline. Vary from it for the specific vibe, but don't get cute.
 
 SLOT RULES:
-- "outerwear": jackets, blazers, coats, vests, overshirts. Skip if not needed for the vibe.
-- "top": shirts, t-shirts, polos, sweaters, henleys — anything worn on the upper body as the main layer.
+- "outerwear": jackets, blazers, coats, overshirts. INCLUDE ONLY when the weather/setting actually requires it (cool evening, formal event, rain, etc). Skip for warm weather, indoor events, beach, gym, etc.
+- "top": shirts, t-shirts, polos, sweaters, henleys — the main upper-body layer.
 - "bottom": trousers, pants, jeans, chinos, shorts.
-- "shoes": any footwear — sneakers, loafers, boots, dress shoes.
-- "accessory": small add-ons like belts, ties, bolo ties, pocket squares, watches, sunglasses, hats, cowboy hats, scarves, socks. A polo, sweater, or knit shirt is NEVER an accessory — those are "top".
+- "shoes": any footwear.
+- "accessory": belt, watch, tie, sunglasses, etc. INCLUDE AT MOST ONE accessory, and only when it's actually load-bearing for the look (e.g. a belt with tucked-in shirt, a tie for formal wear). Most outfits should have ZERO accessories.
 
 CRITICAL — these three slots are MANDATORY in every output, no exceptions:
 - Exactly 1 object with "slot": "top"
 - Exactly 1 object with "slot": "bottom"
 - Exactly 1 object with "slot": "shoes"
-Never omit any of these, even if you think the wearer "obviously" already owns one (a basic white tee, dark jeans, etc). The user sees ONLY what you output — a missing slot means a missing piece in their outfit. If a slot would be a generic basic for this vibe, include it anyway with a brand commitment to the best version of that basic.
-
-Cover a full outfit: outerwear (if needed), exactly 1 top, exactly 1 bottom, exactly 1 pair of shoes, and 1-3 accessories. Use 3 accessories when the occasion authentically calls for it (e.g. belt + bolo + cowboy hat for a ranch wedding, belt + watch + pocket square for black-tie). Do NOT force accessories that don't belong.
+Never omit any of these. The user sees ONLY what you output — a missing slot is a missing piece in their outfit. If a slot would be a generic basic, include it anyway with a brand committed to the best version of that basic.
 
 Scenario specifics:
-- Boat day / beach / pool → swim trunks as the bottom, skip belts, skip outerwear
+- Boat day / beach / pool → swim trunks as the bottom, no belt, no outerwear
 - Gym / workout → athletic shorts or joggers, performance top, trainers
-- Black tie → tuxedo pieces, dress shoes, bow tie
-- Casual → don't force a belt or tie if they don't add to the look
+- Black tie → tuxedo, dress shoes, bow tie
+- Warm-weather casual → don't suggest jackets, don't suggest hats unless the user asked for one
+- Cool evening → light jacket or sweater is fine
+- Wedding (non-themed) → suit or odd jacket + trousers, dress shirt, dress shoes — NOT linen capris and a bolo tie
+- Office / business casual → chinos or wool trousers, oxford or polo, leather sneakers or loafers
 
-Example — Texas ranch wedding:
-[{"item": "pearl-snap chambray western shirt", "slot": "top", "brand": "Freenote Cloth", "product": "Calico Western Shirt"}, {"item": "dark indigo selvedge denim slim straight", "slot": "bottom", "brand": "Tellason", "product": "Stock Selvedge"}, {"item": "tan cowhide western roper boots", "slot": "shoes", "brand": "Tecovas", "product": "The Jackson"}, {"item": "tooled tan leather belt with western buckle", "slot": "accessory", "brand": "Lucchese", "product": ""}, {"item": "silver-tipped braided leather bolo tie", "slot": "accessory", "brand": "Yellowstone Ranch Store", "product": ""}, {"item": "sand felt open-road cowboy hat", "slot": "accessory", "brand": "Stetson", "product": "Open Road"}]
+Example — first day of law school:
+[{"item": "navy unstructured wool blazer", "slot": "outerwear", "brand": "J.Crew", "product": "Ludlow Blazer"}, {"item": "light blue oxford button-down shirt", "slot": "top", "brand": "Brooks Brothers", "product": "Original Polo Shirt"}, {"item": "stone cotton chinos straight fit", "slot": "bottom", "brand": "Bonobos", "product": "Stretch Washed Chino"}, {"item": "brown leather penny loafers", "slot": "shoes", "brand": "Allen Edmonds", "product": "Walden"}]
 
-Example — Italian Riviera wedding:
-[{"item": "unstructured navy linen K-jacket", "slot": "outerwear", "brand": "Boglioli", "product": "K-Jacket"}, {"item": "white linen spread-collar shirt", "slot": "top", "brand": "Luca Faloni", "product": "Versilia Linen Shirt"}, {"item": "cream cotton-linen pleated trousers", "slot": "bottom", "brand": "Incotex", "product": ""}, {"item": "brown suede tassel loafers", "slot": "shoes", "brand": "Crockett & Jones", "product": "Cavendish"}, {"item": "navy silk knit tie", "slot": "accessory", "brand": "Drake's", "product": ""}]
+Example — outdoor concert on a warm evening:
+[{"item": "white pocket t-shirt heavyweight cotton", "slot": "top", "brand": "Buck Mason", "product": "Pima Curved Hem Tee"}, {"item": "indigo selvedge denim slim straight", "slot": "bottom", "brand": "Levi's", "product": "511"}, {"item": "white leather low-top sneakers", "slot": "shoes", "brand": "Common Projects", "product": "Achilles Low"}]
 """
 
 
@@ -329,6 +332,9 @@ class UserProfile(BaseModel):
     shoeSize: Optional[str] = None
     likedBrands: Optional[List[str]] = None
     dislikedBrands: Optional[List[str]] = None
+    # Free-text style rules the user wrote about what they will/won't wear.
+    # Treated as HARD constraints in the items prompt.
+    stylePrinciples: Optional[str] = None
 
 
 class AdviceRequest(BaseModel):
@@ -1068,34 +1074,41 @@ Please provide specific brand and store recommendations organized by price tier 
 @app.post("/shop-vibe", response_model=VibeResponse)
 async def get_vibe_recommendations(req: VibeRequest):
     """Get structured shopping recommendations based on a vibe/occasion."""
-    # Phase 1: Claude determines what items are needed for the vibe
-    search_query = f"outfit for {req.vibe} what to wear style"
-    try:
-        context, metadatas = retrieve_context(search_query)
-    except Exception:
-        context, metadatas = "", []
+    # Phase 1: Claude determines what items are needed for the vibe.
+    #
+    # We deliberately do NOT retrieve from the menswear-blog Pinecone index
+    # here. Doing so was injecting a strong "menswear writer" voice into the
+    # outputs (huaraches, tropical M-65s, Portuguese flannel camp collars,
+    # etc.) that doesn't match what most users actually want to wear. Claude
+    # already has plenty of style knowledge from base training; the user's
+    # own profile and style principles are a much better anchor for taste
+    # than a niche editorial corpus.
 
     # Brand preference hints learned from the user's save/skip history
     pref_lines = ""
+    style_principles_line = ""
     if req.profile:
         liked = req.profile.likedBrands or []
         disliked = req.profile.dislikedBrands or []
         if liked:
-            pref_lines += f"\nThe user has shown they like these brands (from past saves): {', '.join(liked)}. Prefer them when they authentically fit this occasion. Do NOT force them onto vibes where they don't belong — cultural authenticity comes first."
+            pref_lines += f"\nThe user has shown they like these brands (from past saves): {', '.join(liked)}. Prefer them when they fit."
         if disliked:
-            pref_lines += f"\nThe user has shown they don't like these brands (from past skips): {', '.join(disliked)}. Avoid them unless no culturally appropriate alternative exists."
+            pref_lines += f"\nThe user has shown they don't like these brands (from past skips): {', '.join(disliked)}. Avoid them."
+        if req.profile.stylePrinciples:
+            # Hard taste anchor — these are rules the user wrote about what
+            # they will and won't wear. Treat them as constraints, not hints.
+            style_principles_line = (
+                f"\n\nThe user's style rules (these are HARD CONSTRAINTS — "
+                f"never violate them, even if the vibe seems to call for it):\n"
+                f"{req.profile.stylePrinciples}"
+            )
 
-    items_message = f"""Here are relevant excerpts from menswear writing — use them to ground yourself in the cultural and stylistic context of this occasion:
+    items_message = f"""The user wants to dress for: "{req.vibe}"
+{format_profile(req.profile)}{style_principles_line}{pref_lines}
 
-{context}
+Build a normal, tasteful outfit a real person would actually wear — not a costume, not an editorial styling, not a Pitti Uomo street-style shoot. Think "what would a well-dressed friend with good taste put on for this." Default to widely-appealing classics over niche/novelty pieces.
 
----
-
-The user wants to dress for this vibe/occasion: "{req.vibe}"
-{format_profile(req.profile)}{pref_lines}
-Commit to an authentic look for this specific occasion, drawing on the excerpts above AND your knowledge of regional/cultural menswear. Do NOT default to generic Italian coastal prep — match the actual tradition of the place, culture, and setting described.
-
-Return a JSON array of 5-8 item descriptions WITH brand commitments. Remember: ONLY output the JSON array, nothing else."""
+Return a JSON array of 3-5 item descriptions WITH brand commitments. ONLY output the JSON array, nothing else."""
 
     try:
         raw_items = ask_claude(VIBE_ITEMS_PROMPT, [{"type": "text", "text": items_message}])

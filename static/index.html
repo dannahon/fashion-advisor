@@ -408,6 +408,8 @@ input::placeholder { color: var(--text-muted); }
   padding: 36px 32px;
   max-width: 420px;
   width: 90%;
+  max-height: 90vh;
+  overflow-y: auto;
   text-align: center;
 }
 .onboarding-card h2 {
@@ -443,6 +445,29 @@ input::placeholder { color: var(--text-muted); }
   font-family: var(--font);
   appearance: none;
   cursor: pointer;
+}
+.onboarding-field textarea {
+  width: 100%;
+  min-height: 90px;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-input);
+  color: var(--text);
+  font-size: 0.9rem;
+  font-family: var(--font);
+  resize: vertical;
+  line-height: 1.4;
+  box-sizing: border-box;
+}
+.onboarding-field .field-hint {
+  display: block;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  margin-top: 6px;
+  text-transform: none;
+  letter-spacing: 0;
+  line-height: 1.4;
 }
 .pill-group {
   display: flex;
@@ -569,6 +594,12 @@ input::placeholder { color: var(--text-muted); }
         <button class="pill" data-val="moderate">I Like Nice Things</button>
         <button class="pill" data-val="luxury">Money Is No Object</button>
       </div>
+    </div>
+
+    <div class="onboarding-field">
+      <label>Style rules <span style="text-transform:none;letter-spacing:0;opacity:.6;">(optional)</span></label>
+      <textarea id="ob-style-principles" placeholder="e.g. No streetwear, no novelty pieces, no hats. Prefer earth tones and navy. No skinny anything. No graphic tees."></textarea>
+      <span class="field-hint">Hard constraints we'll never violate. Write what you will and won't wear — short, blunt rules work best.</span>
     </div>
 
     <button class="onboarding-submit" id="ob-save">Get Started</button>
@@ -984,7 +1015,8 @@ document.getElementById('ob-save').addEventListener('click', () => {
   const budgetEl = document.querySelector('#ob-budget .pill.selected');
   const build = buildEl ? buildEl.dataset.val : '';
   const budget = budgetEl ? budgetEl.dataset.val : '';
-  saveUserProfile({ height, build, budget, shoeSize });
+  const stylePrinciples = document.getElementById('ob-style-principles').value.trim();
+  saveUserProfile({ height, build, budget, shoeSize, stylePrinciples });
   onboarding.classList.add('hidden');
 });
 
@@ -1000,6 +1032,7 @@ document.getElementById('edit-profile').addEventListener('click', () => {
   if (profile) {
     document.getElementById('ob-height').value = profile.height || '';
     document.getElementById('ob-shoe-size').value = profile.shoeSize || '';
+    document.getElementById('ob-style-principles').value = profile.stylePrinciples || '';
     document.querySelectorAll('#ob-build .pill').forEach(p => {
       p.classList.toggle('selected', p.dataset.val === profile.build);
     });
