@@ -511,6 +511,17 @@ def _get_site_query(budget: str = "", n: int = 8, item_hint: str = "") -> str:
             unique.append(s)
     return " OR ".join(f"site:{s}" for s in unique)
 
+# Last-resort generic queries by slot. Used only when every other search
+# tier has failed for an essential slot — these are the dead-simple "you
+# will not be shirtless" queries that any major US retailer stocks.
+_GENERIC_SLOT_QUERIES = {
+    "top": "men's button-down shirt",
+    "bottom": "men's chinos",
+    "shoes": "men's leather dress shoes",
+    "outerwear": "men's jacket",
+}
+
+
 def _extract_dollar_price(text: str) -> str:
     """Extract a clean dollar price from text like '$155.00', '£120', 'From $99', etc."""
     m = _re.search(r'\$\s*(\d[\d,]*(?:\.\d{2})?)', text)
@@ -722,6 +733,11 @@ def search_product(item_info, budget="", exclude_links=None, shoe_size="", site_
     # a curated retailer pool — recall over precision.
     serp_q = f"{query} ({site_filter})" if site_filter else f"{query} buy"
     try:
+        # gl=us + hl=en is enough to anchor results to the US Google index.
+        # We deliberately do NOT pass a `location` param — SerpAPI's location
+        # field expects an exact entry from their locations endpoint and a
+        # bare "United States" was returning thinner / inconsistent result
+        # sets, which caused the missing-essential-slot bug.
         search = GoogleSearch({
             "engine": "google",
             "q": serp_q,
@@ -729,7 +745,6 @@ def search_product(item_info, budget="", exclude_links=None, shoe_size="", site_
             "num": 15,
             "gl": "us",
             "hl": "en",
-            "location": "United States",
         })
         data = search.get_dict()
         for r in data.get("organic_results", []):
@@ -821,6 +836,20 @@ def search_product(item_info, budget="", exclude_links=None, shoe_size="", site_
             oldest_key = min(_SEARCH_CACHE, key=lambda k: _SEARCH_CACHE[k][0])
             _SEARCH_CACHE.pop(oldest_key, None)
         _SEARCH_CACHE[cache_key] = (time.time(), result)
+
+    # Per-call diagnostic so we can tell which search tier failed for which
+    # slot. Logs the actual SerpAPI query, the slot, and which of the three
+    # required fields (link/price/image) were filled. Reading Render logs
+    # for `search_product:` is the quickest way to debug a missing slot.
+    logger.info(
+        "search_product: slot=%s site_filter=%s q=%r -> link=%s price=%s image=%s",
+        slot or "?",
+        bool(site_filter),
+        serp_q,
+        bool(result.get("link")),
+        bool(result.get("price")),
+        bool(result.get("image_url")),
+    )
 
     return result
 
@@ -1134,11 +1163,12 @@ Output ONLY the JSON array of {len(missing_essentials)} new items, nothing else.
                 slot=slot,
             ))
 
-        # Third retry — last-resort fallback for essentials still missing.
+        # Third retry — fallback for essentials still missing.
         # Forces results into the curated RETAILERS pool via a site: filter.
         # Loses cultural specificity but has very high recall for basics
         # like a white tee or navy chinos, which is exactly what we need
         # when the open-web search has already failed twice.
+        truly_failed = []
         if still_failed:
             fallback_items = [
                 {**i, "brand": "", "product": ""} if isinstance(i, dict) else i
@@ -1156,10 +1186,7 @@ Output ONLY the JSON array of {len(missing_essentials)} new items, nothing else.
             fallback_results = await asyncio.gather(*fallback_tasks)
             for item_info, sr in zip(still_failed, fallback_results):
                 if not sr["link"] or not sr.get("price") or not sr.get("image_url"):
-                    logger.warning(
-                        f"shop-vibe '{req.vibe}': all 3 search attempts failed for "
-                        f"essential slot {item_info if isinstance(item_info, str) else item_info.get('slot', '?')}"
-                    )
+                    truly_failed.append(item_info)
                     continue
                 s_item = item_info if isinstance(item_info, str) else item_info.get("item", "")
                 slot = "accessory" if isinstance(item_info, str) else item_info.get("slot", "accessory")
@@ -1173,6 +1200,60 @@ Output ONLY the JSON array of {len(missing_essentials)} new items, nothing else.
                     search_item=s_item,
                     search_product="",
                     slot=slot,
+                ))
+
+        # Fourth retry — absolute last resort. The user must never be told
+        # to attend law school in just pants and shoes. Drop Claude's whole
+        # item description and search for a dead-simple slot-generic query
+        # like "men's button-down shirt" that any major US retailer stocks.
+        if truly_failed:
+            generic_items = []
+            for fi in truly_failed:
+                slot_name = "" if isinstance(fi, str) else fi.get("slot", "")
+                generic_q = _GENERIC_SLOT_QUERIES.get(slot_name)
+                if not generic_q:
+                    # No generic query for this slot (e.g. accessory) — skip
+                    generic_items.append(None)
+                    continue
+                generic_items.append({
+                    "item": generic_q,
+                    "brand": "",
+                    "product": "",
+                    "slot": slot_name,
+                })
+            generic_tasks = [
+                (loop.run_in_executor(
+                    _executor, search_product, gi, budget, None, shoe_size
+                ) if gi is not None else None)
+                for gi in generic_items
+            ]
+            for orig, task in zip(truly_failed, generic_tasks):
+                if task is None:
+                    logger.warning(
+                        f"shop-vibe '{req.vibe}': all 4 search attempts failed for "
+                        f"essential slot {orig if isinstance(orig, str) else orig.get('slot', '?')} "
+                        f"(no generic query available)"
+                    )
+                    continue
+                sr = await task
+                slot_name = "accessory" if isinstance(orig, str) else orig.get("slot", "accessory")
+                if not sr["link"] or not sr.get("price") or not sr.get("image_url"):
+                    logger.warning(
+                        f"shop-vibe '{req.vibe}': all 4 search attempts failed for "
+                        f"essential slot {slot_name}"
+                    )
+                    continue
+                s_item = orig if isinstance(orig, str) else orig.get("item", "")
+                items.append(ShopItem(
+                    name=sr["title"],
+                    brand="",
+                    price=sr["price"],
+                    link=sr["link"],
+                    description=s_item,
+                    image=sr["image_url"],
+                    search_item=s_item,
+                    search_product="",
+                    slot=slot_name,
                 ))
 
     # Diagnostic: log which slots Claude asked for vs. which ones survived
