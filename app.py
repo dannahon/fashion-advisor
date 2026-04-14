@@ -951,6 +951,19 @@ Return a JSON array of 5-8 item descriptions WITH brand commitments. Remember: O
                 slot=slot,
             ))
 
+    # Diagnostic: log which slots Claude asked for vs. which ones survived
+    # search + retry. Tells us whether the missing-slot bug is Claude
+    # omitting a slot in the JSON or search_product failing twice.
+    requested_slots = [
+        (i.get("slot", "?"), i.get("item", "")) if isinstance(i, dict) else ("?", i)
+        for i in item_descriptions
+    ]
+    delivered_slots = [it.slot for it in items]
+    logger.info(
+        f"shop-vibe '{req.vibe}' | requested={requested_slots} | "
+        f"delivered={delivered_slots}"
+    )
+
     return VibeResponse(vibe=req.vibe, items=items)
 
 
