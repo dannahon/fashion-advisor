@@ -16,6 +16,7 @@ Run:
 
 import os
 import io
+import time
 import base64
 import json
 import asyncio
@@ -320,6 +321,8 @@ class UserProfile(BaseModel):
     build: Optional[str] = None
     budget: Optional[str] = None
     shoeSize: Optional[str] = None
+    likedBrands: Optional[List[str]] = None
+    dislikedBrands: Optional[List[str]] = None
 
 
 class AdviceRequest(BaseModel):
@@ -591,13 +594,53 @@ def _scrape_product_image(url: str, timeout: float = 5.0) -> str:
         return ""
 
 
-def search_product(item_info, budget="", exclude_links=None, shoe_size="") -> dict:
+# In-process TTL cache for search_product. Keyed on the resolved query
+# inputs (item, brand, product, slot, budget, shoe_size). Skipped entirely
+# when exclude_links is non-empty (the /shop-refresh path wants a *different*
+# product than what's cached). Only successful results are cached.
+# Evaporates on every Render deploy — that's fine for now; persistent caching
+# is parked in the roadmap until traffic justifies the infra.
+_SEARCH_CACHE: dict = {}
+_SEARCH_CACHE_TTL = 24 * 3600  # 24 hours
+_SEARCH_CACHE_MAX = 2000
+
+
+def _search_cache_key(item_info, budget, shoe_size):
+    if isinstance(item_info, str):
+        return (item_info, "", "", "", budget, shoe_size)
+    return (
+        item_info.get("item", ""),
+        item_info.get("brand", ""),
+        item_info.get("product", ""),
+        item_info.get("slot", ""),
+        budget,
+        shoe_size,
+    )
+
+
+def search_product(item_info, budget="", exclude_links=None, shoe_size="", site_filter="") -> dict:
     """Search for a real, in-stock product using SerpAPI Google organic + og:image.
 
     Uses Claude's committed brand/product when available for cultural specificity,
     and trusts Google ranking + a skip_domains list for curation rather than a
     hard site: filter (which previously capped Claude to a fixed retailer pool
-    and killed brand-authentic picks like Tecovas, Stetson, Freenote, etc.)."""
+    and killed brand-authentic picks like Tecovas, Stetson, Freenote, etc.).
+
+    site_filter: optional 'site:foo.com OR site:bar.com' fragment that forces
+    results into a curated retailer pool. Used as a last-resort retry for
+    essential slots (top/bottom/shoes) that fail the open-web search. Cache
+    is bypassed when this is set."""
+    # Cache check — only when the caller isn't trying to *avoid* a specific
+    # link AND isn't using a site filter (which would key-collide with the
+    # normal open-web search but return different results).
+    use_cache = not exclude_links and not site_filter
+    cache_key = None
+    if use_cache:
+        cache_key = _search_cache_key(item_info, budget, shoe_size)
+        entry = _SEARCH_CACHE.get(cache_key)
+        if entry and (time.time() - entry[0]) < _SEARCH_CACHE_TTL:
+            return entry[1]
+
     if exclude_links is None:
         exclude_links = []
     exclude_set = set(exclude_links)
@@ -633,11 +676,14 @@ def search_product(item_info, budget="", exclude_links=None, shoe_size="") -> di
 
     result = {"query": query, "title": "", "link": "", "price": "", "image_url": ""}
 
-    # Organic search for product link + price
+    # Organic search for product link + price.
+    # When site_filter is set we trade the brand-authentic open-web query for
+    # a curated retailer pool — recall over precision.
+    serp_q = f"{query} ({site_filter})" if site_filter else f"{query} buy"
     try:
         search = GoogleSearch({
             "engine": "google",
-            "q": f"{query} buy",
+            "q": serp_q,
             "api_key": SERPAPI_KEY,
             "num": 15,
             "gl": "us",
@@ -703,6 +749,15 @@ def search_product(item_info, budget="", exclude_links=None, shoe_size="") -> di
     # stock photo from Google Images.
     if result["link"]:
         result["image_url"] = _scrape_product_image(result["link"])
+
+    # Cache successful results only (link + price + image_url all present).
+    # Failures are not cached so transient stock issues don't persist for 24h.
+    if use_cache and cache_key and result.get("link") and result.get("price") and result.get("image_url"):
+        if len(_SEARCH_CACHE) >= _SEARCH_CACHE_MAX:
+            # Evict oldest entry — simple LRU-by-insertion-time
+            oldest_key = min(_SEARCH_CACHE, key=lambda k: _SEARCH_CACHE[k][0])
+            _SEARCH_CACHE.pop(oldest_key, None)
+        _SEARCH_CACHE[cache_key] = (time.time(), result)
 
     return result
 
@@ -848,6 +903,16 @@ async def get_vibe_recommendations(req: VibeRequest):
     except Exception:
         context, metadatas = "", []
 
+    # Brand preference hints learned from the user's save/skip history
+    pref_lines = ""
+    if req.profile:
+        liked = req.profile.likedBrands or []
+        disliked = req.profile.dislikedBrands or []
+        if liked:
+            pref_lines += f"\nThe user has shown they like these brands (from past saves): {', '.join(liked)}. Prefer them when they authentically fit this occasion. Do NOT force them onto vibes where they don't belong — cultural authenticity comes first."
+        if disliked:
+            pref_lines += f"\nThe user has shown they don't like these brands (from past skips): {', '.join(disliked)}. Avoid them unless no culturally appropriate alternative exists."
+
     items_message = f"""Here are relevant excerpts from menswear writing — use them to ground yourself in the cultural and stylistic context of this occasion:
 
 {context}
@@ -855,7 +920,7 @@ async def get_vibe_recommendations(req: VibeRequest):
 ---
 
 The user wants to dress for this vibe/occasion: "{req.vibe}"
-{format_profile(req.profile)}
+{format_profile(req.profile)}{pref_lines}
 Commit to an authentic look for this specific occasion, drawing on the excerpts above AND your knowledge of regional/cultural menswear. Do NOT default to generic Italian coastal prep — match the actual tradition of the place, culture, and setting described.
 
 Return a JSON array of 5-8 item descriptions WITH brand commitments. Remember: ONLY output the JSON array, nothing else."""
@@ -881,6 +946,19 @@ Return a JSON array of 5-8 item descriptions WITH brand commitments. Remember: O
     except (json.JSONDecodeError, IndexError, ValueError):
         raise HTTPException(status_code=502, detail="Could not build outfit — please try again")
 
+    # JSON validation: warn if Claude omitted any essential slot from the
+    # output. This is the "Claude judgment call" half of the missing-slot
+    # bug — separate from the "search failed" half handled by the retries
+    # below. The diagnostic log at the bottom of this endpoint records both.
+    requested_slots_set = {
+        i.get("slot") for i in item_descriptions if isinstance(i, dict)
+    }
+    for essential in ("top", "bottom", "shoes"):
+        if essential not in requested_slots_set:
+            logger.warning(
+                f"shop-vibe '{req.vibe}': Claude omitted essential slot '{essential}' from JSON"
+            )
+
     # Phase 2: Search for real, in-stock products for each item
     budget = req.profile.budget if req.profile else ""
     shoe_size = req.profile.shoeSize if req.profile else ""
@@ -898,9 +976,11 @@ Return a JSON array of 5-8 item descriptions WITH brand commitments. Remember: O
         if isinstance(item_info, str):
             s_item = item_info
             slot = "accessory"
+            item_brand = ""
         else:
             s_item = item_info.get("item", "")
             slot = item_info.get("slot", "accessory")
+            item_brand = item_info.get("brand", "")
 
         if not sr["link"] or not sr.get("price") or not sr.get("image_url"):
             # If an essential slot failed, queue it for retry
@@ -910,7 +990,7 @@ Return a JSON array of 5-8 item descriptions WITH brand commitments. Remember: O
 
         items.append(ShopItem(
             name=sr["title"],
-            brand="",
+            brand=item_brand,
             price=sr["price"],
             link=sr["link"],
             description=s_item,
@@ -934,11 +1014,16 @@ Return a JSON array of 5-8 item descriptions WITH brand commitments. Remember: O
             for item_info in retry_items
         ]
         retry_results = await asyncio.gather(*retry_tasks)
+        still_failed = []
         for item_info, sr in zip(failed_essential, retry_results):
             if not sr["link"] or not sr.get("price") or not sr.get("image_url"):
+                still_failed.append(item_info)
                 continue
             s_item = item_info if isinstance(item_info, str) else item_info.get("item", "")
             slot = "accessory" if isinstance(item_info, str) else item_info.get("slot", "accessory")
+            # Brand is empty here because the retry stripped Claude's commitment;
+            # the actual product brand isn't easily extractable from the search
+            # result title, so we leave it blank rather than guess.
             items.append(ShopItem(
                 name=sr["title"],
                 brand="",
@@ -950,6 +1035,47 @@ Return a JSON array of 5-8 item descriptions WITH brand commitments. Remember: O
                 search_product="",
                 slot=slot,
             ))
+
+        # Third retry — last-resort fallback for essentials still missing.
+        # Forces results into the curated RETAILERS pool via a site: filter.
+        # Loses cultural specificity but has very high recall for basics
+        # like a white tee or navy chinos, which is exactly what we need
+        # when the open-web search has already failed twice.
+        if still_failed:
+            fallback_items = [
+                {**i, "brand": "", "product": ""} if isinstance(i, dict) else i
+                for i in still_failed
+            ]
+            fallback_tasks = []
+            for fi in fallback_items:
+                hint = fi.get("item", "") if isinstance(fi, dict) else fi
+                sf = _get_site_query(budget=budget, n=8, item_hint=hint)
+                fallback_tasks.append(
+                    loop.run_in_executor(
+                        _executor, search_product, fi, budget, None, shoe_size, sf
+                    )
+                )
+            fallback_results = await asyncio.gather(*fallback_tasks)
+            for item_info, sr in zip(still_failed, fallback_results):
+                if not sr["link"] or not sr.get("price") or not sr.get("image_url"):
+                    logger.warning(
+                        f"shop-vibe '{req.vibe}': all 3 search attempts failed for "
+                        f"essential slot {item_info if isinstance(item_info, str) else item_info.get('slot', '?')}"
+                    )
+                    continue
+                s_item = item_info if isinstance(item_info, str) else item_info.get("item", "")
+                slot = "accessory" if isinstance(item_info, str) else item_info.get("slot", "accessory")
+                items.append(ShopItem(
+                    name=sr["title"],
+                    brand="",
+                    price=sr["price"],
+                    link=sr["link"],
+                    description=s_item,
+                    image=sr["image_url"],
+                    search_item=s_item,
+                    search_product="",
+                    slot=slot,
+                ))
 
     # Diagnostic: log which slots Claude asked for vs. which ones survived
     # search + retry. Tells us whether the missing-slot bug is Claude

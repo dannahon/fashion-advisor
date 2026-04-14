@@ -661,6 +661,7 @@ function savePiece(item) {
     saved.push(item);
     localStorage.setItem('savedPieces', JSON.stringify(saved));
   }
+  if (item.brand) bumpBrandCount('savedBrands', item.brand);
 }
 
 function unsavePiece(link) {
@@ -670,6 +671,38 @@ function unsavePiece(link) {
 
 function isPieceSaved(link) {
   return getSavedPieces().some(s => s.link === link);
+}
+
+// ── Brand preference memory (localStorage) ──────────────
+// Per-brand counts of saves and skips, used to bias future vibe outputs.
+// Stored as { "Drake's": 3, "Stetson": 1 } under savedBrands / skippedBrands.
+function getBrandCounts(key) {
+  try { return JSON.parse(localStorage.getItem(key) || '{}'); }
+  catch { return {}; }
+}
+
+function bumpBrandCount(key, brand) {
+  if (!brand) return;
+  const counts = getBrandCounts(key);
+  counts[brand] = (counts[brand] || 0) + 1;
+  localStorage.setItem(key, JSON.stringify(counts));
+}
+
+function getBrandPreferences() {
+  // Top 5 saved brands (any count >= 1) and top 5 skipped brands (count >= 2,
+  // so a single accidental skip doesn't permanently blacklist a brand).
+  const saved = getBrandCounts('savedBrands');
+  const skipped = getBrandCounts('skippedBrands');
+  const liked = Object.entries(saved)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([brand]) => brand);
+  const disliked = Object.entries(skipped)
+    .filter(([, n]) => n >= 2)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([brand]) => brand);
+  return { liked, disliked };
 }
 
 // ── Randomized prompt suggestions ────────────────────────
@@ -735,11 +768,21 @@ async function sendVibe() {
   shopInputZone.classList.add('hidden');
   shopLoading.classList.add('active');
 
+  // Merge brand preferences (learned from saves/skips) into the profile
+  // so the backend can inject them into the prompt.
+  const baseProfile = getUserProfile() || {};
+  const { liked, disliked } = getBrandPreferences();
+  const profileWithPrefs = {
+    ...baseProfile,
+    likedBrands: liked,
+    dislikedBrands: disliked,
+  };
+
   try {
     const res = await fetch('/shop-vibe', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ vibe, profile: getUserProfile() }),
+      body: JSON.stringify({ vibe, profile: profileWithPrefs }),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
@@ -857,6 +900,11 @@ function toggleSave(card) {
 async function refreshCard(card) {
   const skipBtn = card.querySelector('.skip-btn');
   if (skipBtn.disabled) return;
+
+  // Record the skip against the current item's brand BEFORE we replace it
+  if (card._currentItem && card._currentItem.brand) {
+    bumpBrandCount('skippedBrands', card._currentItem.brand);
+  }
 
   skipBtn.disabled = true;
   card.classList.add('refreshing');
