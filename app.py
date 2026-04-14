@@ -534,21 +534,38 @@ def _is_bad_title(title: str) -> bool:
 
 def _scrape_product_image(url: str, timeout: float = 5.0) -> str:
     """Try to extract the product image from the actual product page.
-    Looks for og:image, twitter:image, or common product image meta tags."""
+    Looks for og:image, twitter:image, or common product image meta tags.
+    Returns "" if the product is out of stock (detected via schema.org JSON-LD)."""
     try:
         resp = _requests.get(url, timeout=timeout, headers={
             "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
         })
         if resp.status_code != 200:
             return ""
-        html = resp.text[:100_000]  # Only scan first 100KB
 
-        # Try og:image first (most reliable for product pages)
+        # Drop out-of-stock products. Most retailers (especially Shopify stores
+        # like Deus, Drakes, etc.) emit schema.org JSON-LD with offers.availability.
+        # Heuristic: bail if any offer says OutOfStock AND no offer says InStock
+        # (this correctly handles variant products where some sizes are OOS but
+        # others are still available — those pages contain both markers.)
+        # IMPORTANT: scan the FULL HTML, not just the first 100KB — availability
+        # markers are often in a JSON-LD block deep in the page.
+        full_lower = resp.text.lower()
+        if ("schema.org/outofstock" in full_lower
+                and "schema.org/instock" not in full_lower):
+            return ""
+
+        html = resp.text[:100_000]  # og:image regex only needs the head
+
+        # Try og:image first (most reliable for product pages).
+        # Patterns use [^>]* rather than \s+ between <meta and attributes so they
+        # match tags with extra attributes (e.g. React Helmet: <meta data-react-
+        # helmet="true" property="og:image" content="...">).
         for pattern in [
-            r'<meta\s+property=["\']og:image["\']\s+content=["\'](https?://[^"\']+)["\']',
-            r'<meta\s+content=["\'](https?://[^"\']+)["\']\s+property=["\']og:image["\']',
-            r'<meta\s+name=["\']twitter:image["\']\s+content=["\'](https?://[^"\']+)["\']',
-            r'<meta\s+content=["\'](https?://[^"\']+)["\']\s+name=["\']twitter:image["\']',
+            r'<meta[^>]*property=["\']og:image["\'][^>]*content=["\'](https?://[^"\']+)',
+            r'<meta[^>]*content=["\'](https?://[^"\']+)["\'][^>]*property=["\']og:image',
+            r'<meta[^>]*name=["\']twitter:image["\'][^>]*content=["\'](https?://[^"\']+)',
+            r'<meta[^>]*content=["\'](https?://[^"\']+)["\'][^>]*name=["\']twitter:image',
         ]:
             m = _re.search(pattern, html, _re.IGNORECASE)
             if m:
@@ -653,32 +670,12 @@ def search_product(item_info, budget="", exclude_links=None, shoe_size="") -> di
     except Exception:
         pass
 
-    # Image: try scraping OG image from the product page first (ensures match)
+    # Image: scrape OG image from the product page (ensures image matches link).
+    # If the page has no og:image or is out of stock, result["image_url"] stays
+    # empty and the caller drops this result rather than showing a mismatched
+    # stock photo from Google Images.
     if result["link"]:
         result["image_url"] = _scrape_product_image(result["link"])
-
-        # Fallback: Google Images search if scraping failed
-        if not result["image_url"]:
-            try:
-                img_query = f"{brand} {product or item}" if brand else item
-                img_search = GoogleSearch({
-                    "engine": "google_images",
-                    "q": f"{img_query} product photo",
-                    "api_key": SERPAPI_KEY,
-                    "num": 5,
-                })
-                img_data = img_search.get_dict()
-                for img in img_data.get("images_results", []):
-                    img_url = img.get("original", "") or img.get("thumbnail", "")
-                    if not img_url:
-                        continue
-                    img_lower = img_url.lower()
-                    if any(d in img_lower for d in ("pinterest.", "reddit.", "youtube.", "wikimedia.")):
-                        continue
-                    result["image_url"] = img_url
-                    break
-            except Exception:
-                pass
 
     return result
 
