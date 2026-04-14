@@ -373,6 +373,27 @@ class VibeResponse(BaseModel):
 
 import re as _re
 import random as _random
+from urllib.parse import urlparse as _urlparse
+
+# Country-code TLDs we reject because they price in a non-USD currency.
+# Checked as hostname suffix via .endswith() so we don't false-positive on
+# things like .jpg in a URL path.
+_FOREIGN_TLD_ENDS = (
+    '.kr', '.jp', '.cn', '.tw', '.hk', '.sg', '.in', '.au', '.nz',
+    '.uk', '.ie', '.de', '.fr', '.it', '.es', '.pt', '.nl', '.be',
+    '.ch', '.at', '.dk', '.se', '.no', '.fi', '.pl', '.ru', '.ua',
+    '.br', '.mx', '.ar', '.cl', '.pe', '.tr', '.il', '.za', '.ae',
+    '.sa', '.th', '.vn', '.id', '.ph', '.my', '.pk',
+)
+
+
+def _is_non_us_hostname(url: str) -> bool:
+    """True if the hostname ends in a non-US country TLD."""
+    try:
+        host = (_urlparse(url).hostname or '').lower()
+    except Exception:
+        return False
+    return host.endswith(_FOREIGN_TLD_ENDS)
 
 # ── Curated retailer list ─────────────────────────────────────────────────────
 # Organized by price tier. search_product picks a random subset per query
@@ -672,7 +693,21 @@ def search_product(item_info, budget="", exclude_links=None, shoe_size="", site_
                     "therealreal.com", "grailed.com", "vestiairecollective.",
                     "amazon.com/dp", "walmart.com", "target.com")
     skip_paths = ("/blog/", "/blogs/", "/article/", "/wiki/", "/news/",
-                  "/review/", "/magazine/", "/editorial/", "/guide/")
+                  "/review/", "/magazine/", "/editorial/", "/guide/",
+                  # Non-US locale path segments — these usually mean a
+                  # different currency on otherwise-US-looking domains
+                  # (e.g. drakes.com/en-kr/...). /en-us/ stays allowed.
+                  "/en-gb/", "/en-au/", "/en-ca/", "/en-nz/", "/en-ie/",
+                  "/en-sg/", "/en-hk/", "/en-in/", "/en-ae/", "/en-kr/",
+                  "/en-jp/", "/en-eu/", "/en-de/", "/en-fr/", "/en-it/",
+                  "/en-es/", "/en-nl/", "/en-be/", "/en-ch/", "/en-at/",
+                  "/en-pl/", "/en-dk/", "/en-se/", "/en-no/", "/en-fi/",
+                  "/en-br/", "/en-mx/",
+                  "/fr-fr/", "/fr-ca/", "/fr-be/", "/fr-ch/",
+                  "/de-de/", "/de-at/", "/de-ch/",
+                  "/it-it/", "/es-es/", "/es-mx/", "/pt-br/", "/pt-pt/",
+                  "/nl-nl/", "/nl-be/", "/pl-pl/", "/ru-ru/",
+                  "/ko-kr/", "/ja-jp/", "/zh-cn/", "/zh-tw/", "/zh-hk/")
 
     result = {"query": query, "title": "", "link": "", "price": "", "image_url": ""}
 
@@ -687,6 +722,8 @@ def search_product(item_info, budget="", exclude_links=None, shoe_size="", site_
             "api_key": SERPAPI_KEY,
             "num": 15,
             "gl": "us",
+            "hl": "en",
+            "location": "United States",
         })
         data = search.get_dict()
         for r in data.get("organic_results", []):
@@ -699,6 +736,8 @@ def search_product(item_info, budget="", exclude_links=None, shoe_size="", site_
             if any(d in lower for d in skip_domains):
                 continue
             if any(p in lower for p in skip_paths):
+                continue
+            if _is_non_us_hostname(link):
                 continue
             if lower.rstrip("/").count("/") <= 2:
                 continue
@@ -713,20 +752,29 @@ def search_product(item_info, budget="", exclude_links=None, shoe_size="", site_
                 if "men's" not in title_lower and "mens" not in title_lower:
                     continue
 
-            # Extract price
+            # Extract price.
+            # SerpAPI's detected_extensions.price is a bare number with NO
+            # currency info, so trusting it directly let Korean Won / Yen /
+            # Euro prices through wearing a $ prefix. We require the raw
+            # extension strings to actually contain a $ before believing
+            # the numeric value, and otherwise fall back to regex extraction
+            # which only matches $-prefixed amounts.
             price = ""
             rich = r.get("rich_snippet") or {}
             bottom = rich.get("bottom") or {}
             exts = bottom.get("detected_extensions") or {}
-            if exts.get("price"):
+            ext_strings = bottom.get("extensions") or []
+            has_usd_signal = any('$' in (s or '') for s in ext_strings)
+
+            if has_usd_signal and exts.get("price"):
                 p = exts['price']
                 price = f"${p:,.0f}" if p == int(p) else f"${p:,.2f}"
-            elif exts.get("price_from"):
+            elif has_usd_signal and exts.get("price_from"):
                 p = exts['price_from']
                 price = f"${p:,.0f}" if p == int(p) else f"${p:,.2f}"
             else:
-                # Fallback: parse first $XX from extensions list
-                for ext_str in (bottom.get("extensions") or []):
+                # Strict: parse first $XX from extensions list
+                for ext_str in ext_strings:
                     extracted = _extract_dollar_price(ext_str)
                     if extracted:
                         price = extracted
@@ -735,6 +783,17 @@ def search_product(item_info, budget="", exclude_links=None, shoe_size="", site_
             # Skip results without a clear dollar price
             if not price or not price.startswith("$"):
                 continue
+
+            # Sanity cap — anything over $20k for vibe shopping is almost
+            # certainly a foreign-currency number that slipped past the
+            # other filters (a Korean Won jacket reads as ~$1.7M, a Yen
+            # one as ~$200k). Drop it rather than show a ridiculous price.
+            try:
+                numeric = float(price.replace("$", "").replace(",", ""))
+                if numeric > 20000:
+                    continue
+            except ValueError:
+                pass
 
             result["title"] = title
             result["link"] = link
