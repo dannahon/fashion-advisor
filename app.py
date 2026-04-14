@@ -603,53 +603,96 @@ def _extract_max_price(text: str) -> Optional[int]:
     return None
 
 
-def _is_category_url(url: str) -> bool:
-    """Check if a URL looks like a category/collection page rather than a product page.
+CATEGORY_WORDS = {
+    "caps", "hats", "shirts", "pants", "jeans", "shoes", "boots",
+    "sneakers", "loafers", "blazers", "jackets", "coats", "belts",
+    "ties", "shorts", "sweaters", "polos", "tees", "accessories",
+    "outerwear", "knitwear", "footwear", "bags", "sale", "new",
+    "trousers", "chinos", "shirting", "tailoring", "denim",
+    "elevated-casual", "smart-casual", "casual", "formal", "workwear",
+    "tops", "bottoms", "swimwear", "underwear", "socks", "hosiery",
+    "clothing", "apparel", "mens", "men", "womens", "women",
+    "sandals", "slippers", "slides", "mules", "oxfords", "derbies",
+    "brogues", "trainers", "flats", "heels", "eyewear", "sunglasses",
+    "watches", "wallets", "scarves", "gloves", "ready-to-wear",
+}
 
-    Be conservative — a false positive here drops a valid product from results,
-    so we only flag URLs whose structure is unambiguously a listing page."""
+MATERIAL_WORDS = {
+    "suede", "leather", "canvas", "cotton", "wool", "linen", "silk",
+    "nylon", "denim", "cashmere", "velvet", "satin", "tweed", "corduroy",
+}
+
+
+def _is_women_only(url: str, title: str) -> bool:
+    """Check if a URL or title points to women's-only content."""
+    lower_url = url.lower()
+    lower_title = title.lower()
+    # URL path segments that mark women's sections
+    path = lower_url.split("?", 1)[0]
+    if any(s in path for s in ("/women/", "/womens/", "/women-", "/ladies/", "/ladies-")):
+        return True
+    # Title contains women's with no men's counterbalance
+    has_womens = "women" in lower_title or "ladies" in lower_title
+    has_mens = "for men" in lower_title or "men's" in lower_title or "mens" in lower_title
+    if has_womens and not has_mens:
+        return True
+    return False
+
+
+def _is_category_url(url: str) -> bool:
+    """Check if a URL looks like a category/collection/brand-landing page rather than a product page.
+
+    Strategy: flag URLs whose STRUCTURE says 'listing' (specific path fragments
+    known to host categories), or whose trailing segment is a generic word."""
     lower = url.lower()
     # Query-param listing signals (search pages)
-    if any(s in lower for s in ("?q=", "?query=", "?search=")):
+    if any(s in lower for s in ("?q=", "?query=", "?search=", "?filter=")):
         return True
     # Strip query string before path analysis (srsltid=... etc. is noise).
     path = lower.split("?", 1)[0]
     segments = [s for s in path.rstrip("/").split("/") if s]
 
-    # Hard signals — these path fragments are ONLY used for listing pages.
-    # Don't include navigational prefixes like /mens/ or /shoes/ — real sites
-    # (Mr Porter, END, Ssense) put those mid-path on product URLs too.
+    # Hard substring signals — path fragments ONLY used on listing pages.
     hard_signals = (
         "/collections/", "/collection/", "/category/", "/categories/",
         "/shop-by/", "/shop_by/", "/shopby/",
         "/browse/", "/plp/", "/department/", "/dept/", "/catalog/",
         "/all-", "/search",
+        # Saks uses /c/ for categories and /brand/ for brand landing pages
+        "/c/", "/brand/", "/brands/",
+        # Mr Porter uses /designer/ for designer category listings
+        # (product URLs use /product/ instead)
+        "/designer/", "/designers/",
     )
     if any(s in path for s in hard_signals):
         return True
 
     # URL ends at a generic category word → listing page
     # (e.g. mrporter.com/en-us/mens/clothing/shoes/loafers)
-    category_endings = {
-        "caps", "hats", "shirts", "pants", "jeans", "shoes", "boots",
-        "sneakers", "loafers", "blazers", "jackets", "coats", "belts",
-        "ties", "shorts", "sweaters", "polos", "tees", "accessories",
-        "outerwear", "knitwear", "footwear", "bags", "sale", "new",
-        "trousers", "chinos", "shirting", "tailoring", "denim",
-        "elevated-casual", "smart-casual", "casual", "formal", "workwear",
-        "tops", "bottoms", "swimwear", "underwear", "socks", "hosiery",
-        "clothing", "apparel", "mens", "men", "womens", "women",
-    }
-    if segments and segments[-1] in category_endings:
-        return True
-
-    # Real product URLs almost always end in a product slug + id, or a long slug.
-    # A trailing segment that's a single short word is suspicious.
     if segments:
-        last = segments[-1]
-        # Strip common suffixes like .html
-        last_clean = last.split(".")[0]
-        if len(last_clean) < 4 and not any(c.isdigit() for c in last_clean):
+        last = segments[-1].split(".")[0]  # strip .html etc.
+
+        # Direct category word
+        if last in CATEGORY_WORDS:
+            return True
+
+        # Compound category slug like "suede-shoes", "dress-shoes",
+        # "slides-sandals", "leather-loafers". If EVERY part of the hyphenated
+        # slug is a category or material word, it's a listing.
+        if "-" in last:
+            parts = last.split("-")
+            if len(parts) <= 4 and all(
+                p in CATEGORY_WORDS or p in MATERIAL_WORDS for p in parts
+            ):
+                return True
+            # Also flag if the LAST hyphen-word is a category AND the slug is short.
+            # (Catches "summer-shoes" where "summer" isn't in either set.)
+            if parts[-1] in CATEGORY_WORDS and len(parts) <= 3:
+                return True
+
+        # Very short trailing segment with no digits — suspect category filter
+        # (e.g. /c/men/shoes/slides-sandals/white where last is a color filter)
+        if len(last) <= 6 and last.isalpha() and len(segments) >= 3:
             return True
     return False
 
@@ -665,23 +708,19 @@ def _is_bad_title(title: str) -> bool:
     )
     if any(s in lower for s in bad_signals):
         return True
+
+    # Patterns like "Shoes for Men", "Suede Shoes for Men", "Loafers for Women"
+    # These are always category pages, never single products.
+    if _re.search(r'\b\w+s\s+for\s+(men|women)\b', lower):
+        return True
+
     # Category pages often have titles like "Men's Elevated Casual | END. (US)"
     # or "Loafers | Mr Porter" — pure category word before a pipe.
-    # A real product title is usually "Brand Product Name | Retailer" where
-    # the part before the pipe is 3+ words. Flag cases where the pre-pipe
-    # half is 1-3 words AND contains a generic category word.
     if "|" in lower:
         pre = lower.split("|", 1)[0].strip()
         pre_words = pre.replace("'s", "").replace("-", " ").split()
         if 1 <= len(pre_words) <= 4:
-            category_words = {
-                "loafers", "shoes", "boots", "sneakers", "shirts", "pants",
-                "jeans", "jackets", "coats", "sweaters", "knitwear", "outerwear",
-                "accessories", "bags", "polos", "tees", "shorts", "trousers",
-                "casual", "formal", "workwear", "tailoring", "denim", "footwear",
-                "new", "sale", "men", "mens",
-            }
-            if any(w in category_words for w in pre_words):
+            if any(w in CATEGORY_WORDS for w in pre_words):
                 return True
     return False
 
@@ -773,6 +812,8 @@ def search_product(item_info, budget="", exclude_links=None, shoe_size="", max_p
             if _is_category_url(lower):
                 continue
             if _is_bad_title(title):
+                continue
+            if _is_women_only(lower, title):
                 continue
 
             # Extract price
