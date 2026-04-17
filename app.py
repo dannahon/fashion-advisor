@@ -57,6 +57,18 @@ EMBED_MODEL = "multilingual-e5-large"
 IMAGES_DIR = os.environ.get("IMAGES_DIR", os.path.expanduser("~/Downloads/images"))
 POSTS_JSON = os.environ.get("POSTS_JSON", os.path.expanduser("~/Downloads/dieworkwear_posts.json"))
 
+# Universal style rules loaded once at startup. These are hard constraints
+# injected into the outfit-generation prompt so Claude follows them on every
+# call regardless of the vibe, lane, or user profile.
+_STYLE_RULES_PATH = os.path.join(os.path.dirname(__file__), "data", "style_rules.md")
+try:
+    with open(_STYLE_RULES_PATH, "r") as _f:
+        STYLE_RULES = _f.read()
+    logger.info("Loaded style rules from %s (%d chars)", _STYLE_RULES_PATH, len(STYLE_RULES))
+except FileNotFoundError:
+    STYLE_RULES = ""
+    logger.warning("Style rules file not found at %s — running without universal rules", _STYLE_RULES_PATH)
+
 # ── Build image index: map post titles to their local image filenames ────────
 IMAGE_INDEX = {}  # title -> [{"file": "post_0001_img_00.jpg", "url": "https://..."}]
 try:
@@ -109,18 +121,17 @@ Each object must have:
 - "brand": a specific brand that makes a great, widely-respected version of this piece. Prefer brands a normal well-dressed man would actually own (J.Crew, Buck Mason, Todd Snyder, Bonobos, Sid Mashburn, Drake's, Charles Tyrwhitt, Taylor Stitch, Allen Edmonds, Alden, Common Projects, New Balance, Levi's, etc.) over niche/avant-garde labels.
 - "product": if you know a specific product/model name from that brand, include it. Otherwise empty string.
 
-TASTE — read this twice:
-The output should be a normal, tasteful outfit that a real person with good taste would actually wear and enjoy wearing — NOT a costume, NOT an editorial styling, NOT a "themed" interpretation of the prompt, NOT a Pitti Uomo street-style shoot. Think "well-dressed friend getting dressed for this thing," not "menswear blog cover story."
+═══════════════════════════════════════════════════
+STYLE RULES — these are HARD CONSTRAINTS. Never violate them, even when
+the vibe or occasion seems to pull in a different direction.
+═══════════════════════════════════════════════════
 
-Default to widely-appealing classics. Avoid:
-- Novelty / niche pieces (tropical M-65 coats, woven leather huaraches, Portuguese flannel camp shirts, bolo ties, capri-length anything, fedoras, floppy hats, Pitti accessories)
-- Costume-y "regional theming" (don't dress someone like a cowboy unless they explicitly asked for cowboy clothes, don't dress someone like a 1950s Italian for "wedding in Italy" — they're attending a wedding, not playing a role)
-- Avant-garde / runway-y labels (Junya, CDG, Yohji, Rick Owens, Bode, Needles, Visvim, Engineered Garments, Story mfg.)
-- Anything you couldn't picture a normal man wearing twice a year without feeling self-conscious
+""" + STYLE_RULES + """
 
-When in doubt, err on the side of: well-cut chinos or selvedge jeans, an oxford or button-down or merino sweater or cotton tee, leather sneakers or loafers or oxfords, maybe a navy or earth-tone jacket. That's the baseline. Vary from it for the specific vibe, but don't get cute.
+═══════════════════════════════════════════════════
+SLOT RULES
+═══════════════════════════════════════════════════
 
-SLOT RULES:
 - "outerwear": jackets, blazers, coats, overshirts. INCLUDE ONLY when the weather/setting actually requires it (cool evening, formal event, rain, etc). Skip for warm weather, indoor events, beach, gym, etc.
 - "top": shirts, t-shirts, polos, sweaters, henleys — the main upper-body layer.
 - "bottom": trousers, pants, jeans, chinos, shorts.
