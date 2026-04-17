@@ -142,10 +142,13 @@ CRITICAL — these three slots are MANDATORY in every output, no exceptions:
 - Exactly 1 object with "slot": "top"
 - Exactly 1 object with "slot": "bottom"
 - Exactly 1 object with "slot": "shoes"
-Never omit any of these. The user sees ONLY what you output — a missing slot is a missing piece in their outfit. If a slot would be a generic basic, include it anyway with a brand committed to the best version of that basic.
+Never omit any of these. Never include more than 1 object per essential slot — no duplicate tops, bottoms, or shoes. The user sees ONLY what you output — a missing slot means a missing piece in their outfit, and a duplicate slot means two pieces competing for the same grid cell. If a slot would be a generic basic, include it anyway with a brand committed to the best version of that basic.
+
+"But they wouldn't wear a shirt for this activity" is NOT a valid reason to omit the top. Beach volleyball, swimming, gym — always include a top. Use a performance tee, a rashguard, or an athletic tank. The user can choose to take it off; you cannot choose to leave it out.
 
 Scenario specifics:
-- Boat day / beach / pool → swim trunks as the bottom, no belt, no outerwear
+- Boat day / beach / pool → swim trunks as the bottom, performance tee or rashguard as the top, slides or sandals as the shoes, no belt, no outerwear
+- Beach volleyball / sports on sand → athletic tank or performance tee as the top, sport shorts as the bottom, court shoes or trainers as the shoes
 - Gym / workout → athletic shorts or joggers, performance top, trainers
 - Black tie → tuxedo, dress shoes, bow tie
 - Warm-weather casual → don't suggest jackets, don't suggest hats unless the user asked for one
@@ -534,19 +537,21 @@ def _get_site_query(budget: str = "", n: int = 8, item_hint: str = "") -> str:
 # the final-guarantee block in /shop-vibe.
 _FALLBACK_QUERIES = {
     "top": [
-        "men's button-down shirt",
-        "men's oxford shirt",
         "men's t-shirt",
+        "men's cotton t-shirt",
+        "men's button-down shirt",
+        "men's athletic shirt",
     ],
     "bottom": [
         "men's chinos",
         "men's pants",
+        "men's shorts",
         "men's jeans",
     ],
     "shoes": [
-        "men's leather dress shoes",
-        "men's loafers",
         "men's sneakers",
+        "men's loafers",
+        "men's leather dress shoes",
     ],
     "outerwear": [
         "men's jacket",
@@ -1522,6 +1527,23 @@ Output ONLY the JSON array of {len(missing_essentials)} new items, nothing else.
                 f"essential slot will be missing from the response"
             )
 
+    # Deduplicate essential slots — if Claude (or retries) produced two
+    # tops, two bottoms, or two shoes, keep only the first one. Duplicate
+    # essentials fight for the same grid cell in the frontend and confuse
+    # the user (e.g. "sneakers AND a pair of shoes").
+    seen_essential_slots = set()
+    deduped_items = []
+    for it in items:
+        if it.slot in ("top", "bottom", "shoes"):
+            if it.slot in seen_essential_slots:
+                logger.info(
+                    f"shop-vibe '{req.vibe}': dropping duplicate '{it.slot}' — {it.name}"
+                )
+                continue
+            seen_essential_slots.add(it.slot)
+        deduped_items.append(it)
+    items = deduped_items
+
     # Diagnostic: log which slots Claude asked for vs. which ones survived
     # search + retry. Tells us whether the missing-slot bug is Claude
     # omitting a slot in the JSON or search_product failing twice.
@@ -1534,6 +1556,24 @@ Output ONLY the JSON array of {len(missing_essentials)} new items, nothing else.
         f"shop-vibe '{req.vibe}' | requested={requested_slots} | "
         f"delivered={delivered_slots}"
     )
+
+    # Hard stop: never serve a partial outfit. If any essential slot is
+    # STILL missing after all retries + final guarantee + dedup, something
+    # is fundamentally wrong (SerpAPI down, rate limited, etc.). Log it
+    # loudly so we can diagnose, but don't send the user a shirtless outfit.
+    final_slots = {it.slot for it in items}
+    missing_final = [s for s in ("top", "bottom", "shoes") if s not in final_slots]
+    if missing_final:
+        logger.error(
+            f"shop-vibe '{req.vibe}': HARD STOP — essential slots still missing "
+            f"after all retries: {missing_final}. "
+            f"delivered_slots={delivered_slots}, "
+            f"requested_slots={requested_slots}"
+        )
+        raise HTTPException(
+            status_code=502,
+            detail="Couldn't build a complete outfit — please try again"
+        )
 
     return VibeResponse(vibe=req.vibe, items=items)
 
