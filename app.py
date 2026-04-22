@@ -183,10 +183,38 @@ Each object must have:
 - "slot": one of "outerwear", "top", "bottom", "shoes", or "accessory" — indicates what part of the outfit this is.
 - "brand": when possible, commit to a specific brand — STRONGLY PREFER brands from the curated catalog provided in the user message (or brands clearly adjacent to that lane). Use the catalog as evidence that a brand is good in this category, even if the specific product you'd commission from them is different from the catalog example. If no catalog brand fits and you don't have a confident pick, return an empty string "" and the system will broaden the search.
 
-Cover a full outfit: outerwear (jacket/blazer/coat — skip if not needed for the vibe), top (shirt/sweater/polo), bottom (pants/shorts), shoes, and 1-2 accessories (belt, watch, sunglasses, tie, pocket square, etc).
+Cover a full outfit: outerwear (jacket/blazer/coat — skip if not needed for the vibe), top (shirt/sweater/polo), bottom (pants/shorts), shoes, and 1-2 accessories (belt, watch, sunglasses, etc).
 
-Example output:
-[{"item": "unstructured navy linen blazer", "slot": "outerwear", "brand": "Drake's"}, {"item": "white linen spread-collar shirt", "slot": "top", "brand": "Sid Mashburn"}, {"item": "cream cotton chinos slim fit", "slot": "bottom", "brand": "Bonobos"}, {"item": "brown leather penny loafers", "slot": "shoes", "brand": "Allen Edmonds"}, {"item": "navy knit silk tie", "slot": "accessory", "brand": ""}, {"item": "white linen pocket square", "slot": "accessory", "brand": ""}]
+═══════════════════════════════════════════════════
+TASTE — read this twice
+═══════════════════════════════════════════════════
+The output should be a normal, tasteful outfit a real person with good taste would actually wear. NOT a costume, NOT an editorial styling, NOT a "themed" interpretation, NOT a Pitti Uomo street-style shoot. Think "well-dressed friend getting dressed for this thing."
+
+NEVER recommend:
+- Boat shoes / deck shoes / Sperry-style topsiders. Ever. For any vibe.
+- Swim trunks / board shorts / swim shorts unless the vibe is EXPLICITLY beach, pool, boat, or surf. Outdoor concert is not a beach. Picnic is not a beach.
+- Loafers for outdoor sports, concerts, hiking, athletic activities, or anything where you'd be on your feet for hours.
+- Novelty / costume pieces (huaraches, bolo ties, fedoras, capri-length anything, tropical M-65 coats, Portuguese flannel camp shirts, ascots, monocles).
+- Avant-garde / runway-y labels (Junya, CDG, Yohji, Rick Owens, Bode for clothing, Visvim, Story mfg, Engineered Garments) unless the user explicitly asks for designer/avant-garde.
+- Sunglasses with cat-eye, oversized round, or other shapes that read as women's frames. Stick to classic shapes (aviator, wayfarer, clubmaster, square) for menswear.
+
+═══════════════════════════════════════════════════
+SCENARIO SPECIFICS
+═══════════════════════════════════════════════════
+- Outdoor concert / live music / festival / brewery / coffee shop weekend → casual tee or short-sleeve shirt or polo, chinos / jeans / casual shorts (NOT swim), low-top sneakers (NOT loafers, NOT boat shoes), sunglasses optional.
+- Beach / pool / boat (explicit aquatic vibes only) → swim trunks, rashguard or tee, slides or sandals.
+- Gym / workout / running → performance top, athletic shorts or joggers, trainers.
+- Office / business casual → chinos or wool trousers, oxford or polo, leather sneakers or loafers.
+- Wedding (non-themed) → suit or odd jacket + trousers, dress shirt, dress shoes.
+- Cool evening out → light jacket or sweater fine, jeans or chinos, sneakers or loafers.
+- Warm-weather casual → no jackets, no hats unless user asked for one.
+- First day of [job/school] → smart casual, slightly overdressed beats underdressed.
+
+Example output for "outdoor concert in Miami":
+[{"item": "white pocket t-shirt heavyweight cotton", "slot": "top", "brand": "Buck Mason"}, {"item": "navy lightweight cotton chino shorts 7 inch inseam", "slot": "bottom", "brand": "J.Crew"}, {"item": "white leather low-top sneakers", "slot": "shoes", "brand": "Common Projects"}, {"item": "tortoise wayfarer-style sunglasses", "slot": "accessory", "brand": "Persol"}]
+
+Example output for "first day of law school":
+[{"item": "navy unstructured wool blazer", "slot": "outerwear", "brand": "J.Crew"}, {"item": "light blue oxford button-down shirt", "slot": "top", "brand": "Brooks Brothers"}, {"item": "stone cotton chinos straight fit", "slot": "bottom", "brand": "Bonobos"}, {"item": "brown leather penny loafers", "slot": "shoes", "brand": "Allen Edmonds"}]
 """
 
 
@@ -657,16 +685,41 @@ def _scrape_product_image(url: str, timeout: float = 5.0) -> str:
         if resp.status_code != 200:
             return ""
 
-        # Drop out-of-stock products. Most retailers (especially Shopify stores)
-        # emit schema.org JSON-LD with offers.availability. Bail if any offer
-        # says OutOfStock AND no offer says InStock — this correctly handles
-        # variant products where some sizes are OOS but others are still
-        # available (those pages contain both markers).
-        # IMPORTANT: scan the FULL HTML, not just the first 100KB — availability
-        # markers are often in a JSON-LD block deep in the page.
+        # Drop out-of-stock products via two signals:
+        # 1. schema.org JSON-LD offers.availability — most reliable, used by
+        #    Shopify and well-instrumented retailers. Bail if any offer says
+        #    OutOfStock AND no offer says InStock (correctly handles variant
+        #    products where some sizes are OOS but others are still available).
+        # 2. Visible "sold out" / "out of stock" / "notify me" text in the
+        #    page body — fallback for indie sites that don't emit structured
+        #    data. We check for these phrases NEAR a "cart" button signal so
+        #    we don't false-positive on review snippets that say things like
+        #    "I keep selling out before I can get one."
+        # IMPORTANT: scan the FULL HTML for both — availability markers and
+        # OOS text are often deep in the page, not in the head.
         full_lower = resp.text.lower()
         if ("schema.org/outofstock" in full_lower
                 and "schema.org/instock" not in full_lower):
+            return ""
+        # Text-based fallback. The phrases must appear AND there must be no
+        # active "add to cart" / "add to bag" affordance for us to bail.
+        oos_phrases = ("sold out", "out of stock", "notify me when",
+                       "email me when available", "back in stock soon",
+                       "currently unavailable")
+        has_oos_text = any(p in full_lower for p in oos_phrases)
+        # Active cart button signals → page is sellable
+        has_active_cart = (
+            'name="add"' in full_lower or "add-to-cart" in full_lower
+            or "add to cart" in full_lower or "add to bag" in full_lower
+        )
+        # Disabled/hidden cart button → page is unsellable
+        has_disabled_cart = (
+            'disabled' in full_lower and ('add to cart' in full_lower
+                                          or 'add to bag' in full_lower)
+        )
+        if has_oos_text and not has_active_cart:
+            return ""
+        if has_oos_text and has_disabled_cart:
             return ""
 
         head_html = resp.text[:100_000]   # head-only for og:image regex
@@ -815,6 +868,24 @@ def search_product(item_info, budget="", exclude_links=None, force_no_brand=Fals
                 continue
             if _is_bad_title(title):
                 continue
+            # Filter out women's results (title or URL path signals).
+            # NOTE: "women's" contains "men's" as a substring, so we must
+            # strip the "women" tokens before checking for "men's" — a
+            # naive `"men's" in title_lower` false-positives on women's
+            # products and lets them through.
+            title_lower = title.lower()
+            if ("/women/" in lower or "/womens/" in lower or "/ladies/" in lower
+                    or "women" in title_lower or "ladies" in title_lower):
+                title_no_women = (
+                    title_lower
+                    .replace("women's", "")
+                    .replace("womens", "")
+                    .replace("women", "")
+                )
+                if ("men's" not in title_no_women
+                        and "mens" not in title_no_women
+                        and "for men" not in title_no_women):
+                    continue
 
             # Extract price
             price = ""
