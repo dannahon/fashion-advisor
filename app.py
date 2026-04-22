@@ -637,6 +637,12 @@ def _is_category_url(url: str) -> bool:
         last = path.rsplit("/", 1)[-1]
         if last in _GENERIC_CATEGORY_TAILS:
             return True
+        # Inditex-group sites (Massimo Dutti, Zara, Stradivarius, Pull&Bear)
+        # use `<category>-c<digits>` for category pages and `<product>-l<digits>`
+        # / `<product>-p<digits>` for products. The "-c<num>" suffix is a
+        # category indicator.
+        if _re.search(r"-c\d+$", last):
+            return True
     return False
 
 
@@ -657,13 +663,60 @@ def _is_non_us_locale(url: str) -> bool:
 
 
 def _is_bad_title(title: str) -> bool:
-    """Check if a search result title suggests a non-product page."""
+    """Check if a search result title suggests a non-product or category page."""
     lower = title.lower()
+    # Editorial / review / comparison pages
     bad_signals = (
         " vs ", " versus ", "comparison", "review:", "best ",
         "top 10", "top 5", "how to", "guide", "slim vs",
     )
-    return any(s in lower for s in bad_signals)
+    if any(s in lower for s in bad_signals):
+        return True
+    # Category / department page titles. SerpAPI titles for these are
+    # almost always shaped like "Men's [category] - [Brand]" or
+    # "[Brand] Men's [category]" or "Shop Men's [category]" with no
+    # specific product descriptor (no fabric, color, fit, model).
+    # Examples we've seen ship to users:
+    #   "Men's Blazers - Massimo Dutti - US"
+    #   "Men's Shirts | J.Crew"
+    #   "Linen Pants for Mens"  (a search-results page)
+    cat_words = (
+        "blazers", "shirts", "pants", "trousers", "jeans", "shorts",
+        "sweaters", "hoodies", "tops", "tees", "t-shirts", "polos",
+        "jackets", "coats", "outerwear", "shoes", "sneakers", "boots",
+        "loafers", "sandals", "bags", "accessories", "hats", "belts",
+        "sunglasses", "underwear", "socks",
+    )
+    cat_prefix = ("men's ", "mens ", "shop men's ", "shop mens ",
+                  "shop ", "men's clothing", "mens clothing")
+    # Generic category title — e.g. "Men's Blazers - Massimo Dutti"
+    for word in cat_words:
+        for prefix in cat_prefix:
+            if lower.startswith(prefix + word):
+                return True
+        # "[Category] for Men/Mens" pattern at start
+        if lower.startswith(word + " for men") or lower.startswith(word + " for mens"):
+            return True
+    # "... for Mens" (plural) anywhere is a strong category SEO signal
+    # used by content-farm product-listing pages ("Linen Pants for Mens").
+    # Real product titles use "for Men" (singular).
+    if " for mens" in lower:
+        return True
+    return False
+
+
+# Minimum realistic dollar prices by slot. Anything cheaper is almost
+# certainly a bad price extraction (snippet from a sale banner, "from $X"
+# starting price, currency confusion). The accessory floor is lower because
+# a $10 belt is plausible whereas a $5 pair of pants is not.
+_MIN_PRICE_BY_SLOT = {
+    "outerwear": 40,
+    "top": 15,
+    "bottom": 25,
+    "shoes": 35,
+    "bag": 20,
+    "accessory": 8,
+}
 
 
 def _scrape_product_image(url: str, timeout: float = 5.0) -> str:
@@ -802,11 +855,12 @@ def search_product(item_info, budget="", exclude_links=None, force_no_brand=Fals
     exclude_set = set(exclude_links)
 
     if isinstance(item_info, str):
-        item, brand, product = item_info, "", ""
+        item, brand, product, slot = item_info, "", "", ""
     else:
         item = item_info.get("item", "")
         brand = item_info.get("brand", "") if not force_no_brand else ""
         product = item_info.get("product", "")
+        slot = item_info.get("slot", "")
 
     # Build the search query.
     # - If Claude committed to a brand (and we're not forcing no-brand mode),
@@ -907,6 +961,20 @@ def search_product(item_info, budget="", exclude_links=None, force_no_brand=Fals
             # Skip results without a clear dollar price
             if not price or not price.startswith("$"):
                 continue
+            # Sanity bounds on the extracted price. A $4 blazer or $5 pair
+            # of pants is almost always a bad price extraction (a "from $X"
+            # category snippet, a "save $X" sale banner, currency confusion).
+            # The $20k upper bound catches foreign-currency leaks (Korean Won
+            # jacket reads as ~$1.7M, Yen as ~$200k).
+            try:
+                numeric = float(price.replace("$", "").replace(",", ""))
+                if numeric > 20000:
+                    continue
+                floor = _MIN_PRICE_BY_SLOT.get(slot, 5)
+                if numeric < floor:
+                    continue
+            except ValueError:
+                pass
 
             result["title"] = title
             result["link"] = link
