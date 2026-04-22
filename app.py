@@ -572,6 +572,20 @@ def _extract_dollar_price(text: str) -> str:
     return ""
 
 
+_GENERIC_CATEGORY_TAILS = {
+    # Generic category names that, when they're the LAST path segment,
+    # indicate a browse page rather than a product page (e.g. SSENSE's
+    # /en-pr/men/shoes).
+    "shoes", "sneakers", "boots", "loafers", "sandals", "trainers",
+    "shirts", "tshirts", "tees", "polos", "sweaters", "hoodies",
+    "pants", "trousers", "jeans", "shorts", "chinos",
+    "jackets", "coats", "blazers", "outerwear",
+    "bags", "accessories", "hats", "belts", "sunglasses",
+    "men", "mens", "women", "womens", "clothing", "apparel",
+    "new", "new-arrivals", "sale", "all",
+}
+
+
 def _is_category_url(url: str) -> bool:
     """Check if a URL looks like a category/collection page rather than a product page."""
     lower = url.lower()
@@ -579,12 +593,39 @@ def _is_category_url(url: str) -> bool:
         "/collections/", "/collection/", "/category/", "/categories/",
         "/shop/", "/search", "/browse/", "/c/", "/plp/",
         "/buy/", "/mens-", "/womens-", "/all-",
-        "?q=", "?query=", "?search=",
+        "?q=", "?query=", "?search=", "?sort=", "?sizes=", "?filter=",
+        "?page=",
     )
-    # URLs ending at a category level (e.g. site.com/mens/shirts)
     if any(s in lower for s in category_signals):
         return True
+    # URL whose last path segment is a generic category name (no product slug
+    # after) — catches SSENSE's /en-pr/men/shoes pattern, Mr Porter's
+    # /us/mens/clothing/shoes, and similar.
+    try:
+        path = _urlparse(url).path.rstrip("/")
+    except Exception:
+        path = ""
+    if path:
+        last = path.rsplit("/", 1)[-1]
+        if last in _GENERIC_CATEGORY_TAILS:
+            return True
     return False
+
+
+def _is_non_us_locale(url: str) -> bool:
+    """Catch URL paths that explicitly target a non-US locale, like
+    SSENSE's /en-pr/ (Puerto Rico) or Mr Porter's /uk/ — these usually
+    price in a non-USD currency and ship from elsewhere."""
+    lower = url.lower()
+    # /en-XX/ pattern where XX is not 'us'
+    if _re.search(r"/en-(?!us)[a-z]{2}/", lower):
+        return True
+    # Other locale prefixes
+    bad = ("/uk/", "/au/", "/ca/", "/nz/", "/ie/", "/sg/", "/hk/",
+           "/in/", "/ae/", "/kr/", "/jp/", "/eu/", "/de/", "/fr/",
+           "/it/", "/es/", "/nl/", "/be/", "/ch/", "/at/", "/pl/",
+           "/dk/", "/se/", "/no/", "/fi/", "/br/", "/mx/")
+    return any(b in lower for b in bad)
 
 
 def _is_bad_title(title: str) -> bool:
@@ -731,6 +772,18 @@ def search_product(item_info, budget="", exclude_links=None, force_no_brand=Fals
 
     skip_paths = ("/blog/", "/blogs/", "/article/", "/wiki/", "/news/",
                   "/review/", "/magazine/", "/editorial/", "/guide/")
+    # Resale marketplaces, social platforms, content farms, and other domains
+    # that produce noisy or untrustworthy product results. eBay listings in
+    # particular keep landing in branded searches at suspiciously low prices
+    # (the "$29.87 Buck Mason shorts" failure mode).
+    skip_domains = (
+        "ebay.", "poshmark.com", "grailed.com", "etsy.com",
+        "mercari.com", "depop.com", "vestiairecollective.",
+        "therealreal.com", "stockx.com", "goat.com", "facebook.com",
+        "instagram.com", "tiktok.com", "twitter.com", "x.com/",
+        "pinterest.", "reddit.com", "youtube.com", "wikipedia.org",
+        "amazon.com/dp", "walmart.com",
+    )
 
     result = {"query": query, "title": "", "link": "", "price": "", "image_url": ""}
 
@@ -750,11 +803,15 @@ def search_product(item_info, budget="", exclude_links=None, force_no_brand=Fals
             lower = link.lower()
             if link in exclude_set:
                 continue
+            if any(d in lower for d in skip_domains):
+                continue
             if any(p in lower for p in skip_paths):
                 continue
             if lower.rstrip("/").count("/") <= 2:
                 continue
             if _is_category_url(lower):
+                continue
+            if _is_non_us_locale(lower):
                 continue
             if _is_bad_title(title):
                 continue
