@@ -1,0 +1,1250 @@
+{
+  "records": [
+    {
+      "type": "product_card",
+      "name": "Corduroy Standard Jean",
+      "brand": "Buck Mason",
+      "price": 188,
+      "currency_original": "USD",
+      "description": "13-wale corduroy in a five-pocket jean cut, straight through the thigh with a taper below the knee. A great way to add texture to your rotation.",
+      "category": "bottom",
+      "color": "tan",
+      "fabric": "13-wale corduroy",
+      "lane_guess": "elevated_everyday",
+      "source_screenshot": "Screenshot 2026-04-21 at 9.06.59\u202fPM.png"
+    },
+    {
+      "type": "product_card",
+      "name": "Curved Hem Tee",
+      "brand": "Buck Mason",
+      "price": 48,
+      "currency_original": "USD",
+      "description": "Made in the USA from American-grown cotton with a light slub texture that gives it just enough personality. I've had a few over the years and they're still going strong.",
+      "category": "top",
+      "color": "white",
+      "fabric": "cotton",
+      "lane_guess": "elevated_everyday",
+      "source_screenshot": "Screenshot 2026-04-21 at 8.57.50\u202fPM.png"
+    },
+    {
+      "type": "product_card",
+      "name": "Japanese Twill Chore Jacket",
+      "brand": "Buck Mason",
+      "price": 298,
+      "currency_original": "USD",
+      "description": "Brushed twill woven in Japan with a pleated belted back for shape and movement. Three patch pockets and a broken-in feel right out of the store.",
+      "category": "outerwear",
+      "color": "beige",
+      "fabric": "brushed twill",
+      "lane_guess": "elevated_everyday",
+      "source_screenshot": "Screenshot 2026-04-21 at 9.06.52\u202fPM.png"
+    },
+    {
+      "type": "product_card",
+      "name": "Seafarer Cotton Crew",
+      "brand": "Buck Mason",
+      "price": 188,
+      "currency_original": "USD",
+      "description": "The kind of sweater you reach for without thinking. Textured cotton rib that works year-round, whether you throw it over a tee or wear it on its own.",
+      "category": "top",
+      "color": "gray",
+      "fabric": "cotton",
+      "lane_guess": "elevated_everyday",
+      "source_screenshot": "Screenshot 2026-04-21 at 8.56.16\u202fPM.png"
+    },
+    {
+      "type": "product_card",
+      "name": "Sportster Jacket",
+      "brand": "Buck Mason",
+      "price": 228,
+      "currency_original": "USD",
+      "description": "Inspired by 60s Drizzler jackets, cut in Japanese gabardine with a glen plaid that's subtle enough for everyday. Fully lined with waist tabs so you can dial in the fit.",
+      "category": "outerwear",
+      "color": "brown",
+      "fabric": "Japanese gabardine",
+      "lane_guess": "elevated_everyday",
+      "source_screenshot": "Screenshot 2026-04-21 at 8.57.43\u202fPM.png"
+    },
+    {
+      "type": "product_card",
+      "name": "Dylan Trousers",
+      "brand": "33mm",
+      "price": 90,
+      "currency_original": "USD",
+      "description": "Double pleats and a perfect stack at the shoe for $90 is genuinely hard to beat.",
+      "category": "bottom",
+      "color": "gray",
+      "fabric": null,
+      "lane_guess": "classic_tailoring",
+      "source_screenshot": "Screenshot 2026-04-21 at 9.27.05\u202fPM.png"
+    },
+    {
+      "type": "product_card",
+      "name": "The Perfect Weekend Tote",
+      "brand": "Alex Mill",
+      "price": 195,
+      "currency_original": "USD",
+      "description": "Went viral for a reason. Garment-washed canvas inspired by a vintage military bag. Fits a laptop, has a zip pocket, and you can monogram it.",
+      "category": "bag",
+      "color": "black",
+      "fabric": "garment-washed canvas",
+      "lane_guess": "elevated_everyday",
+      "source_screenshot": "Screenshot 2026-04-21 at 9.15.10\u202fPM.png"
+    },
+    {
+      "type": "product_card",
+      "name": "Banana Republic",
+      "brand": "Banana Republic",
+      "price": 130,
+      "currency_original": "USD",
+      "description": null,
+      "category": "outerwear",
+      "color": "blue",
+      "fabric": null,
+      "lane_guess": "elevated_everyday",
+      "source_screenshot": "Screenshot 2026-04-21 at 9.08.33\u202fPM.png"
+    },
+    {
+      "type": "product_card",
+      "name": "Bronson Mfg",
+      "brand": "Bronson Manufacturing",
+      "price": 55,
+      "currency_original": "USD",
+      "description": null,
+      "category": "bottom",
+      "color": "olive green",
+      "fabric": null,
+      "lane_guess": "workwear",
+      "source_screenshot": "Screenshot 2026-04-21 at 9.08.26\u202fPM.png"
+    },
+    {
+      "type": "product_card",
+      "name": "Brother Wolf",
+      "brand": "Brother Wolf",
+      "price": 34,
+      "currency_original": "AUD",
+      "description": "Barbershop-born streetwear caps",
+      "category": "hat",
+      "color": "black",
+      "fabric": null,
+      "lane_guess": "streetwear",
+      "source_screenshot": "Screenshot 2026-04-21 at 9.11.02\u202fPM.png"
+    },
+    {
+      "type": "product_card",
+      "name": "Twill Baker Pant",
+      "brand": "Buck Mason",
+      "price": 178,
+      "currency_original": "USD",
+      "description": "A faithful nod to WW2-era military fatigues in garment-washed herringbone twill. Relaxed fit, straight leg, 13-star tack buttons. These just get better with wear.",
+      "category": "bottom",
+      "color": "olive",
+      "fabric": "herringbone twill",
+      "lane_guess": "workwear",
+      "source_screenshot": [
+        "Screenshot 2026-04-21 at 8.47.56\u202fPM.png",
+        "Screenshot 2026-04-21 at 8.57.36\u202fPM.png"
+      ]
+    },
+    {
+      "type": "product_card",
+      "name": "Classic Italian Leather Tote",
+      "brand": "COS",
+      "price": 99,
+      "currency_original": "USD",
+      "description": "Italian leather, minimal Scandinavian design, no loud branding. COS has been quietly making some of the best bags on the market.",
+      "category": "bag",
+      "color": "black",
+      "fabric": "Italian leather",
+      "lane_guess": "european_refined",
+      "source_screenshot": "Screenshot 2026-04-21 at 9.15.19\u202fPM.png"
+    },
+    {
+      "type": "product_card",
+      "name": "Straight Leg Chinos",
+      "brand": "COS",
+      "price": 99,
+      "currency_original": "USD",
+      "description": "A premium cotton blend from a brand known for well-made basics that last for years.",
+      "category": "bottom",
+      "color": "black",
+      "fabric": "cotton blend",
+      "lane_guess": "european_refined",
+      "source_screenshot": "Screenshot 2026-04-21 at 9.27.27\u202fPM.png"
+    },
+    {
+      "type": "product_card",
+      "name": "Tableau Tote Bag",
+      "brand": "COS",
+      "price": 279,
+      "currency_original": "USD",
+      "description": "Italian leather, minimal Scandinavian design, no loud branding. COS has been quietly making some of the best bags on the market.",
+      "category": "bag",
+      "color": "black",
+      "fabric": "Italian leather",
+      "lane_guess": "european_refined",
+      "source_screenshot": "Screenshot 2026-04-21 at 9.15.41\u202fPM.png"
+    },
+    {
+      "type": "product_card",
+      "name": "Dairy Boy",
+      "brand": "Dairy Boy",
+      "price": 45,
+      "currency_original": "USD",
+      "description": "New England cottagecore meets country club",
+      "category": "hat",
+      "color": "green",
+      "fabric": null,
+      "lane_guess": "prep",
+      "source_screenshot": "Screenshot 2026-04-21 at 9.10.54\u202fPM.png"
+    },
+    {
+      "type": "product_card",
+      "name": "H d'Ancre belt buckle & Reversible leather strap 38 mm",
+      "brand": "Herm\u00e8s",
+      "price": 1001,
+      "currency_original": "EUR",
+      "description": "simple leather belt",
+      "category": "belt",
+      "color": "brown",
+      "fabric": "leather",
+      "lane_guess": "european_refined",
+      "source_screenshot": "Screenshot 2026-04-21 at 9.18.15\u202fPM.png"
+    },
+    {
+      "type": "product_card",
+      "name": "ZEPHIRIN 47 IN OBSCURE",
+      "brand": "Jacques Marie Mage",
+      "price": 960,
+      "currency_original": "USD",
+      "description": "A slightly larger iteration of an iconic style, notable for its slim lines, sculptural temples,",
+      "category": "sunglasses",
+      "color": "black",
+      "fabric": null,
+      "lane_guess": "european_refined",
+      "source_screenshot": "Screenshot 2026-04-21 at 9.17.50\u202fPM.png"
+    },
+    {
+      "type": "product_card",
+      "name": "Baseball Cap",
+      "brand": "Loro Piana",
+      "price": 462,
+      "currency_original": "EUR",
+      "description": "simple cap for bad hair days",
+      "category": "hat",
+      "color": "white",
+      "fabric": "Cotton",
+      "lane_guess": "european_refined",
+      "source_screenshot": "Screenshot 2026-04-21 at 9.18.06\u202fPM.png"
+    },
+    {
+      "type": "product_card",
+      "name": "Madewell",
+      "brand": "Madewell",
+      "price": 148,
+      "currency_original": "USD",
+      "description": null,
+      "category": "bottom",
+      "color": "olive green",
+      "fabric": null,
+      "lane_guess": "elevated_everyday",
+      "source_screenshot": "Screenshot 2026-04-21 at 9.08.47\u202fPM.png"
+    },
+    {
+      "type": "product_card",
+      "name": "Cotton Tote Bag",
+      "brand": "Mango",
+      "price": 45,
+      "currency_original": "USD",
+      "description": "Simple, clean, 100% cotton. No frills, no branding overload. The easiest upgrade from a free tote bag.",
+      "category": "bag",
+      "color": "brown",
+      "fabric": "cotton",
+      "lane_guess": "elevated_everyday",
+      "source_screenshot": "Screenshot 2026-04-21 at 9.15.35\u202fPM.png"
+    },
+    {
+      "type": "product_card",
+      "name": "Marine Layer",
+      "brand": "Marine Layer",
+      "price": 75,
+      "currency_original": "USD",
+      "description": null,
+      "category": "bottom",
+      "color": "olive green",
+      "fabric": null,
+      "lane_guess": "elevated_everyday",
+      "source_screenshot": "Screenshot 2026-04-21 at 9.08.40\u202fPM.png"
+    },
+    {
+      "type": "product_card",
+      "name": "Tailored Fit Barrel Trousers",
+      "brand": "Massimo Dutti",
+      "price": 180,
+      "currency_original": "USD",
+      "description": "Lined, tailored, and cut in a fashion-forward shape that looks as expensive as it is.",
+      "category": "bottom",
+      "color": "beige",
+      "fabric": "lined",
+      "lane_guess": "european_refined",
+      "source_screenshot": "Screenshot 2026-04-21 at 9.27.38\u202fPM.png"
+    },
+    {
+      "type": "product_card",
+      "name": "Moreporks",
+      "brand": "Moreporks",
+      "price": 45,
+      "currency_original": "USD",
+      "description": "Laid-back Kiwi caps with intricate details",
+      "category": "hat",
+      "color": "white",
+      "fabric": null,
+      "lane_guess": "workwear",
+      "source_screenshot": "Screenshot 2026-04-21 at 9.11.22\u202fPM.png"
+    },
+    {
+      "type": "product_card",
+      "name": "PCH Leather Jacket",
+      "brand": "PCH",
+      "price": 698,
+      "currency_original": "USD",
+      "description": "Full-grain cowhide with a belted back and chain-zip details inspired by 1940s work jackets. This is the leather jacket you buy once and let develop character over the years.",
+      "category": "outerwear",
+      "color": "black",
+      "fabric": "full-grain cowhide",
+      "lane_guess": "workwear",
+      "source_screenshot": "Screenshot 2026-04-21 at 9.07.05\u202fPM.png"
+    },
+    {
+      "type": "product_card",
+      "name": "Straight Leg Chino",
+      "brand": "Percival",
+      "price": 160,
+      "currency_original": "USD",
+      "description": "100% cotton with a tailored finish versatile enough for work or a night out.",
+      "category": "bottom",
+      "color": "beige",
+      "fabric": "100% cotton",
+      "lane_guess": "european_refined",
+      "source_screenshot": "Screenshot 2026-04-21 at 9.27.11\u202fPM.png"
+    },
+    {
+      "type": "product_card",
+      "name": "August Tote",
+      "brand": "Portland Leather",
+      "price": 132,
+      "currency_original": "USD",
+      "description": "Handmade from US full-grain leather, unlined so it lasts longer. Tons of colors and develops serious character over time.",
+      "category": "bag",
+      "color": "brown",
+      "fabric": "full-grain leather",
+      "lane_guess": "elevated_everyday",
+      "source_screenshot": "Screenshot 2026-04-21 at 9.15.28\u202fPM.png"
+    },
+    {
+      "type": "product_card",
+      "name": "Heritage Leather Tote",
+      "brand": "Ralph Lauren",
+      "price": 598,
+      "currency_original": "USD",
+      "description": "Grain piece. Full-grain leather with the Heritage logo debossed on front. Timeless, structured, built to develop a patina over time.",
+      "category": "bag",
+      "color": "brown",
+      "fabric": "full-grain leather",
+      "lane_guess": "classic_tailoring",
+      "source_screenshot": "Screenshot 2026-04-21 at 9.15.54\u202fPM.png"
+    },
+    {
+      "type": "product_card",
+      "name": "Saint Tropez Bracelet",
+      "brand": "Riefo",
+      "price": 44,
+      "currency_original": "EUR",
+      "description": "leather bracelet to match with the everyday watch",
+      "category": "jewelry",
+      "color": "black",
+      "fabric": "leather",
+      "lane_guess": "elevated_everyday",
+      "source_screenshot": "Screenshot 2026-04-21 at 9.17.57\u202fPM.png"
+    },
+    {
+      "type": "product_card",
+      "name": "Saint Tropez Cardholder",
+      "brand": "Rofo",
+      "price": 50,
+      "currency_original": "EUR",
+      "description": "good quality cardholder",
+      "category": "accessory",
+      "color": "navy",
+      "fabric": "leather",
+      "lane_guess": "european_refined",
+      "source_screenshot": "Screenshot 2026-04-21 at 9.17.42\u202fPM.png"
+    },
+    {
+      "type": "product_card",
+      "name": "Linen-Wool Officer Trouser",
+      "brand": "Todd Synder",
+      "price": 298,
+      "currency_original": "USD",
+      "description": "Italian wool-linen, double pleats, and refined enough to dress up or down \u2014 the price reflects real craft.",
+      "category": "bottom",
+      "color": "gray",
+      "fabric": "linen-wool",
+      "lane_guess": "classic_tailoring",
+      "source_screenshot": "Screenshot 2026-04-21 at 9.27.21\u202fPM.png"
+    },
+    {
+      "type": "product_card",
+      "name": "Uncle Rics",
+      "brand": "Uncle Rics",
+      "price": 36,
+      "currency_original": "AUD",
+      "description": "Vintage-styled short brim caps",
+      "category": "hat",
+      "color": "white",
+      "fabric": null,
+      "lane_guess": "streetwear",
+      "source_screenshot": "Screenshot 2026-04-21 at 9.11.08\u202fPM.png"
+    },
+    {
+      "type": "product_card",
+      "name": "Pleated Wide Pants",
+      "brand": "Uniqlo",
+      "price": 60,
+      "currency_original": "USD",
+      "description": "Pleated, wide-leg, elegant drape \u2014 looks like it cost twice as much.",
+      "category": "bottom",
+      "color": "navy",
+      "fabric": null,
+      "lane_guess": "elevated_everyday",
+      "source_screenshot": "Screenshot 2026-04-21 at 9.27.17\u202fPM.png"
+    },
+    {
+      "type": "product_card",
+      "name": "Walk in Paris",
+      "brand": "Walk in Paris",
+      "price": 70,
+      "currency_original": "USD",
+      "description": "French streetwear caps",
+      "category": "hat",
+      "color": "navy",
+      "fabric": null,
+      "lane_guess": "streetwear",
+      "source_screenshot": "Screenshot 2026-04-21 at 9.11.15\u202fPM.png"
+    },
+    {
+      "type": "product_card",
+      "name": "Relax Fit Pleated Pants",
+      "brand": "Zara",
+      "price": 80,
+      "currency_original": "USD",
+      "description": "Pleated, relaxed, and an easy way to try trousers without committing to a higher price.",
+      "category": "bottom",
+      "color": "beige",
+      "fabric": null,
+      "lane_guess": "elevated_everyday",
+      "source_screenshot": "Screenshot 2026-04-21 at 9.27.32\u202fPM.png"
+    },
+    {
+      "type": "price_ladder",
+      "category_name": "Black Loafers",
+      "category": "shoes",
+      "options": [
+        {
+          "brand": "Zara",
+          "price": 70,
+          "tier": "budget"
+        },
+        {
+          "brand": "J.Crew",
+          "price": 168,
+          "tier": "budget_plus"
+        },
+        {
+          "brand": "G.H. Bass",
+          "price": 195,
+          "tier": "mid"
+        },
+        {
+          "brand": "Todd Snyder",
+          "price": 600,
+          "tier": "premium"
+        }
+      ],
+      "lane_guess": "classic_tailoring",
+      "source_screenshot": "Screenshot 2026-04-21 at 9.23.28\u202fPM.png"
+    },
+    {
+      "type": "price_ladder",
+      "category_name": "Black Trousers",
+      "category": "bottom",
+      "options": [
+        {
+          "brand": "Uniqlo",
+          "price": 60,
+          "tier": "budget"
+        },
+        {
+          "brand": "Zara",
+          "price": 80,
+          "tier": "budget_plus"
+        },
+        {
+          "brand": "COS",
+          "price": 149,
+          "tier": "mid"
+        },
+        {
+          "brand": "Todd Snyder",
+          "price": 390,
+          "tier": "premium"
+        }
+      ],
+      "lane_guess": "elevated_everyday",
+      "source_screenshot": "Screenshot 2026-04-21 at 9.22.13\u202fPM.png"
+    },
+    {
+      "type": "price_ladder",
+      "category_name": "Blue Oxford Shirt",
+      "category": "top",
+      "options": [
+        {
+          "brand": "H&M",
+          "price": 30,
+          "tier": "budget"
+        },
+        {
+          "brand": "Zara",
+          "price": 60,
+          "tier": "budget_plus"
+        },
+        {
+          "brand": "J.Crew",
+          "price": 98,
+          "tier": "mid"
+        },
+        {
+          "brand": "Ralph Lauren",
+          "price": 130,
+          "tier": "premium"
+        }
+      ],
+      "lane_guess": "classic_tailoring",
+      "source_screenshot": "Screenshot 2026-04-21 at 9.25.27\u202fPM.png"
+    },
+    {
+      "type": "price_ladder",
+      "category_name": "Boots",
+      "category": "shoes",
+      "options": [
+        {
+          "brand": "Timberland",
+          "price": 200,
+          "tier": "budget_plus"
+        },
+        {
+          "brand": "Frye",
+          "price": 400,
+          "tier": "mid"
+        },
+        {
+          "brand": "Joseph T",
+          "price": 600,
+          "tier": "premium"
+        },
+        {
+          "brand": "Our Legacy",
+          "price": 800,
+          "tier": "premium"
+        }
+      ],
+      "lane_guess": "elevated_everyday",
+      "source_screenshot": "Screenshot 2026-04-21 at 9.16.40\u202fPM.png"
+    },
+    {
+      "type": "price_ladder",
+      "category_name": "Chino Shorts",
+      "category": "bottom",
+      "options": [
+        {
+          "brand": "Quince",
+          "price": 42,
+          "tier": "budget"
+        },
+        {
+          "brand": "Abercrombie",
+          "price": 65,
+          "tier": "budget_plus"
+        },
+        {
+          "brand": "Buck Mason",
+          "price": 98,
+          "tier": "mid"
+        },
+        {
+          "brand": "Suit Supply",
+          "price": 119,
+          "tier": "premium"
+        }
+      ],
+      "lane_guess": "elevated_everyday",
+      "source_screenshot": "Screenshot 2026-04-21 at 9.24.16\u202fPM.png"
+    },
+    {
+      "type": "price_ladder",
+      "category_name": "Colored Sneakers",
+      "category": "shoes",
+      "options": [
+        {
+          "brand": "Atorie",
+          "price": 75,
+          "tier": "budget"
+        },
+        {
+          "brand": "Adidas",
+          "price": 120,
+          "tier": "budget_plus"
+        },
+        {
+          "brand": "Onitsuka Tiger",
+          "price": 190,
+          "tier": "mid"
+        },
+        {
+          "brand": "Dries Van Noten",
+          "price": 630,
+          "tier": "premium"
+        }
+      ],
+      "lane_guess": "streetwear",
+      "source_screenshot": "Screenshot 2026-04-21 at 9.24.30\u202fPM.png"
+    },
+    {
+      "type": "price_ladder",
+      "category_name": "Cropped Color Tees",
+      "category": "top",
+      "options": [
+        {
+          "brand": "Abercrombie",
+          "price": 13,
+          "tier": "budget"
+        },
+        {
+          "brand": "Sown Again",
+          "price": 40,
+          "tier": "budget_plus"
+        },
+        {
+          "brand": "California Arts",
+          "price": 59,
+          "tier": "mid"
+        },
+        {
+          "brand": "Poolhouse NYC",
+          "price": 70,
+          "tier": "mid"
+        }
+      ],
+      "lane_guess": "streetwear",
+      "source_screenshot": "Screenshot 2026-04-21 at 9.12.20\u202fPM.png"
+    },
+    {
+      "type": "price_ladder",
+      "category_name": "Denim Jacket",
+      "category": "outerwear",
+      "options": [
+        {
+          "brand": "Gap",
+          "price": 44,
+          "tier": "budget"
+        },
+        {
+          "brand": "Levi's",
+          "price": 58,
+          "tier": "budget_plus"
+        },
+        {
+          "brand": "Zara",
+          "price": 129,
+          "tier": "mid"
+        },
+        {
+          "brand": "Percival",
+          "price": 255,
+          "tier": "premium"
+        }
+      ],
+      "lane_guess": "elevated_everyday",
+      "source_screenshot": "Screenshot 2026-04-21 at 9.25.39\u202fPM.png"
+    },
+    {
+      "type": "price_ladder",
+      "category_name": "Derbys",
+      "category": "shoes",
+      "options": [
+        {
+          "brand": "Beckett Simonon",
+          "price": 199,
+          "tier": "budget_plus"
+        },
+        {
+          "brand": "Dr. Martens",
+          "price": 150,
+          "tier": "budget_plus"
+        },
+        {
+          "brand": "Clark's",
+          "price": 120,
+          "tier": "budget"
+        },
+        {
+          "brand": "Joseph T",
+          "price": 400,
+          "tier": "premium"
+        }
+      ],
+      "lane_guess": "elevated_everyday",
+      "source_screenshot": "Screenshot 2026-04-21 at 9.16.37\u202fPM.png"
+    },
+    {
+      "type": "price_ladder",
+      "category_name": "Flannel Button Up",
+      "category": "top",
+      "options": [
+        {
+          "brand": "Banana Republic",
+          "price": 50,
+          "tier": "budget_plus"
+        },
+        {
+          "brand": "Abercrombie",
+          "price": 85,
+          "tier": "mid"
+        },
+        {
+          "brand": "Ralph Lauren",
+          "price": 125,
+          "tier": "mid"
+        },
+        {
+          "brand": "Faherty",
+          "price": 178,
+          "tier": "premium"
+        }
+      ],
+      "lane_guess": "elevated_everyday",
+      "source_screenshot": "Screenshot 2026-04-21 at 9.23.36\u202fPM.png"
+    },
+    {
+      "type": "price_ladder",
+      "category_name": "Knit Polo",
+      "category": "top",
+      "options": [
+        {
+          "brand": "Banana Republic",
+          "price": 37,
+          "tier": "budget"
+        },
+        {
+          "brand": "Mango",
+          "price": 68,
+          "tier": "budget_plus"
+        },
+        {
+          "brand": "Suit Supply",
+          "price": 159,
+          "tier": "mid"
+        },
+        {
+          "brand": "Todd Snyder",
+          "price": 248,
+          "tier": "premium"
+        }
+      ],
+      "lane_guess": "elevated_everyday",
+      "source_screenshot": "Screenshot 2026-04-21 at 9.24.39\u202fPM.png"
+    },
+    {
+      "type": "price_ladder",
+      "category_name": "Leather Belt",
+      "category": "belt",
+      "options": [
+        {
+          "brand": "Amazon",
+          "price": 20,
+          "tier": "budget"
+        },
+        {
+          "brand": "Zara",
+          "price": 60,
+          "tier": "budget_plus"
+        },
+        {
+          "brand": "Alex Mill",
+          "price": 155,
+          "tier": "mid"
+        },
+        {
+          "brand": "Our Legacy",
+          "price": 210,
+          "tier": "premium"
+        }
+      ],
+      "lane_guess": "elevated_everyday",
+      "source_screenshot": "Screenshot 2026-04-21 at 9.23.42\u202fPM.png"
+    },
+    {
+      "type": "price_ladder",
+      "category_name": "Leather or Canvas Tote",
+      "category": "bag",
+      "options": [
+        {
+          "brand": "Trader Joes",
+          "price": 3,
+          "tier": "budget"
+        },
+        {
+          "brand": "Quince",
+          "price": 104,
+          "tier": "mid"
+        },
+        {
+          "brand": "Alex Mill",
+          "price": 195,
+          "tier": "mid"
+        },
+        {
+          "brand": "Bembien",
+          "price": 650,
+          "tier": "premium"
+        }
+      ],
+      "lane_guess": "european_refined",
+      "source_screenshot": "Screenshot 2026-04-21 at 9.25.45\u202fPM.png"
+    },
+    {
+      "type": "price_ladder",
+      "category_name": "Linen Button-Up",
+      "category": "top",
+      "options": [
+        {
+          "brand": "Quince",
+          "price": 42,
+          "tier": "budget"
+        },
+        {
+          "brand": "Abercrombie",
+          "price": 80,
+          "tier": "budget_plus"
+        },
+        {
+          "brand": "J.Crew",
+          "price": 118,
+          "tier": "mid"
+        },
+        {
+          "brand": "Alex Crane",
+          "price": 168,
+          "tier": "premium"
+        }
+      ],
+      "lane_guess": "european_refined",
+      "source_screenshot": "Screenshot 2026-04-21 at 9.24.23\u202fPM.png"
+    },
+    {
+      "type": "price_ladder",
+      "category_name": "Linen Trousers",
+      "category": "bottom",
+      "options": [
+        {
+          "brand": "Quince",
+          "price": 54,
+          "tier": "budget"
+        },
+        {
+          "brand": "J.Crew",
+          "price": 76,
+          "tier": "budget_plus"
+        },
+        {
+          "brand": "Abercrombie",
+          "price": 95,
+          "tier": "mid"
+        },
+        {
+          "brand": "Madewell",
+          "price": 138,
+          "tier": "premium"
+        }
+      ],
+      "lane_guess": "european_refined",
+      "source_screenshot": "Screenshot 2026-04-21 at 9.25.31\u202fPM.png"
+    },
+    {
+      "type": "price_ladder",
+      "category_name": "Loafers",
+      "category": "shoes",
+      "options": [
+        {
+          "brand": "Duke + Dexter",
+          "price": 200,
+          "tier": "budget_plus"
+        },
+        {
+          "brand": "Allen Edmonds",
+          "price": 350,
+          "tier": "mid"
+        },
+        {
+          "brand": "G.H. Bass",
+          "price": 120,
+          "tier": "budget"
+        },
+        {
+          "brand": "Banana Republic",
+          "price": 180,
+          "tier": "budget_plus"
+        }
+      ],
+      "lane_guess": "classic_tailoring",
+      "source_screenshot": "Screenshot 2026-04-21 at 9.16.33\u202fPM.png"
+    },
+    {
+      "type": "price_ladder",
+      "category_name": "Long Sleeve or Henley",
+      "category": "top",
+      "options": [
+        {
+          "brand": "Gap",
+          "price": 19,
+          "tier": "budget"
+        },
+        {
+          "brand": "Uniqlo",
+          "price": 29,
+          "tier": "budget_plus"
+        },
+        {
+          "brand": "Abercrombie",
+          "price": 35,
+          "tier": "mid"
+        },
+        {
+          "brand": "COS",
+          "price": 69,
+          "tier": "premium"
+        }
+      ],
+      "lane_guess": "elevated_everyday",
+      "source_screenshot": "Screenshot 2026-04-21 at 9.12.27\u202fPM.png"
+    },
+    {
+      "type": "price_ladder",
+      "category_name": "Ringer Shirt",
+      "category": "top",
+      "options": [
+        {
+          "brand": "Zara",
+          "price": 30,
+          "tier": "budget"
+        },
+        {
+          "brand": "Winslow",
+          "price": 45,
+          "tier": "budget_plus"
+        },
+        {
+          "brand": "Demossa",
+          "price": 67,
+          "tier": "mid"
+        },
+        {
+          "brand": "Buck Mason",
+          "price": 78,
+          "tier": "mid"
+        }
+      ],
+      "lane_guess": "elevated_everyday",
+      "source_screenshot": "Screenshot 2026-04-21 at 9.11.36\u202fPM.png"
+    },
+    {
+      "type": "price_ladder",
+      "category_name": "Short Sleeve Button-Up",
+      "category": "top",
+      "options": [
+        {
+          "brand": "Abercrombie",
+          "price": 75,
+          "tier": "budget_plus"
+        },
+        {
+          "brand": "Portuguese Flannel",
+          "price": 151,
+          "tier": "mid"
+        },
+        {
+          "brand": "Wax London",
+          "price": 195,
+          "tier": "mid"
+        },
+        {
+          "brand": "Corridor",
+          "price": 235,
+          "tier": "premium"
+        }
+      ],
+      "lane_guess": "elevated_everyday",
+      "source_screenshot": "Screenshot 2026-04-21 at 9.24.07\u202fPM.png"
+    },
+    {
+      "type": "price_ladder",
+      "category_name": "Sneakers",
+      "category": "shoes",
+      "options": [
+        {
+          "brand": "New Balance",
+          "price": 80,
+          "tier": "budget"
+        },
+        {
+          "brand": "Dries Van Noten",
+          "price": 450,
+          "tier": "premium"
+        },
+        {
+          "brand": "Onitsuka Tiger",
+          "price": 120,
+          "tier": "budget_plus"
+        },
+        {
+          "brand": "Jacquemus",
+          "price": 380,
+          "tier": "premium"
+        }
+      ],
+      "lane_guess": "streetwear",
+      "source_screenshot": "Screenshot 2026-04-21 at 9.16.43\u202fPM.png"
+    },
+    {
+      "type": "price_ladder",
+      "category_name": "Striped Shirt",
+      "category": "top",
+      "options": [
+        {
+          "brand": "Gap",
+          "price": 10,
+          "tier": "budget"
+        },
+        {
+          "brand": "Bronson",
+          "price": 30,
+          "tier": "budget_plus"
+        },
+        {
+          "brand": "J.Crew",
+          "price": 50,
+          "tier": "mid"
+        },
+        {
+          "brand": "SuitSupply",
+          "price": 109,
+          "tier": "premium"
+        }
+      ],
+      "lane_guess": "european_refined",
+      "source_screenshot": "Screenshot 2026-04-21 at 9.12.34\u202fPM.png"
+    },
+    {
+      "type": "price_ladder",
+      "category_name": "The Green Utility Pant",
+      "category": "bottom",
+      "options": [],
+      "lane_guess": "workwear",
+      "source_screenshot": "Screenshot 2026-04-21 at 9.08.20\u202fPM.png"
+    },
+    {
+      "type": "price_ladder",
+      "category_name": "White Henley",
+      "category": "top",
+      "options": [
+        {
+          "brand": "Quince",
+          "price": 30,
+          "tier": "budget"
+        },
+        {
+          "brand": "Abercrombie",
+          "price": 40,
+          "tier": "budget_plus"
+        },
+        {
+          "brand": "Massimo Dutti",
+          "price": 90,
+          "tier": "mid"
+        },
+        {
+          "brand": "Vince",
+          "price": 190,
+          "tier": "premium"
+        }
+      ],
+      "lane_guess": "elevated_everyday",
+      "source_screenshot": "Screenshot 2026-04-21 at 9.23.19\u202fPM.png"
+    },
+    {
+      "type": "price_ladder",
+      "category_name": "White Leather Sneaker",
+      "category": "shoes",
+      "options": [
+        {
+          "brand": "Banana Republic",
+          "price": 45,
+          "tier": "budget"
+        },
+        {
+          "brand": "Zara",
+          "price": 55,
+          "tier": "budget_plus"
+        },
+        {
+          "brand": "Beckett Simonon",
+          "price": 179,
+          "tier": "mid"
+        },
+        {
+          "brand": "Common Projects",
+          "price": 565,
+          "tier": "premium"
+        }
+      ],
+      "lane_guess": "elevated_everyday",
+      "source_screenshot": "Screenshot 2026-04-21 at 9.25.51\u202fPM.png"
+    },
+    {
+      "type": "price_ladder",
+      "category_name": "White Tee",
+      "category": "top",
+      "options": [
+        {
+          "brand": "Bronson",
+          "price": 25,
+          "tier": "budget"
+        },
+        {
+          "brand": "Buck Mason",
+          "price": 45,
+          "tier": "budget_plus"
+        },
+        {
+          "brand": "Whitesville (2-pack)",
+          "price": 93,
+          "tier": "mid"
+        },
+        {
+          "brand": "Merz B. Schwanen",
+          "price": 95,
+          "tier": "premium"
+        }
+      ],
+      "lane_guess": "elevated_everyday",
+      "source_screenshot": "Screenshot 2026-04-21 at 9.11.42\u202fPM.png"
+    },
+    {
+      "type": "hero_shot",
+      "name": "Adidas X Aggressive",
+      "brand": "Adidas",
+      "category": "shoes",
+      "color": "green",
+      "lane_guess": "streetwear",
+      "source_screenshot": "Screenshot 2026-04-21 at 9.18.39\u202fPM.png"
+    },
+    {
+      "type": "hero_shot",
+      "name": "Adidas X Wales Bonner Sambas",
+      "brand": "Adidas",
+      "category": "shoes",
+      "color": "navy",
+      "lane_guess": "streetwear",
+      "source_screenshot": "Screenshot 2026-04-21 at 9.19.08\u202fPM.png"
+    },
+    {
+      "type": "hero_shot",
+      "name": "Asics Sneakers",
+      "brand": "Asics",
+      "category": "shoes",
+      "color": "white",
+      "lane_guess": "athletic",
+      "source_screenshot": "Screenshot 2026-04-21 at 9.18.56\u202fPM.png"
+    },
+    {
+      "type": "hero_shot",
+      "name": "Bottega Veneta intrecciato windbreaker",
+      "brand": "Bottega Veneta",
+      "category": "outerwear",
+      "color": "beige",
+      "lane_guess": "european_refined",
+      "source_screenshot": "Screenshot 2026-04-21 at 9.19.25\u202fPM.png"
+    },
+    {
+      "type": "hero_shot",
+      "name": "Santos-Dumont Watch",
+      "brand": "Cartier",
+      "category": "watch",
+      "color": "silver",
+      "lane_guess": "european_refined",
+      "source_screenshot": "Screenshot 2026-04-21 at 9.17.35\u202fPM.png"
+    },
+    {
+      "type": "hero_shot",
+      "name": "Cole Buxton x Wilson sneaker",
+      "brand": "Cole Buxton",
+      "category": "shoes",
+      "color": "white",
+      "lane_guess": "streetwear",
+      "source_screenshot": "Screenshot 2026-04-21 at 9.19.20\u202fPM.png"
+    },
+    {
+      "type": "hero_shot",
+      "name": "Grey Goose Sneakers",
+      "brand": "Golden Goose",
+      "category": "shoes",
+      "color": "black",
+      "lane_guess": "streetwear",
+      "source_screenshot": "Screenshot 2026-04-21 at 9.19.02\u202fPM.png"
+    },
+    {
+      "type": "hero_shot",
+      "name": "New Balance 1906D",
+      "brand": "New Balance",
+      "category": "shoes",
+      "color": "beige",
+      "lane_guess": "streetwear",
+      "source_screenshot": "Screenshot 2026-04-21 at 9.18.50\u202fPM.png"
+    },
+    {
+      "type": "hero_shot",
+      "name": "JJJJound X Puma",
+      "brand": "Puma",
+      "category": "shoes",
+      "color": "navy",
+      "lane_guess": "streetwear",
+      "source_screenshot": "Screenshot 2026-04-21 at 9.18.32\u202fPM.png"
+    },
+    {
+      "type": "other",
+      "note": "This is a Buck Mason website screenshot showing their product catalog page with navigation, filters, and a shoe product listing.",
+      "source_screenshot": "Screenshot 2026-04-21 at 9.21.40\u202fPM.png"
+    },
+    {
+      "type": "other",
+      "note": "This is a Steve Madden product page screenshot showing brown leather loafers with a video review overlay, not a TikTok menswear content format.",
+      "source_screenshot": "Screenshot 2026-04-21 at 9.20.56\u202fPM.png"
+    }
+  ],
+  "summary": {
+    "product_card": 34,
+    "price_ladder": 25,
+    "hero_shot": 9,
+    "other": 2
+  }
+}

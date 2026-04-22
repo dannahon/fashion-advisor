@@ -56,6 +56,82 @@ EMBED_MODEL = "multilingual-e5-large"
 IMAGES_DIR = os.environ.get("IMAGES_DIR", os.path.expanduser("~/Downloads/images"))
 POSTS_JSON = os.environ.get("POSTS_JSON", os.path.expanduser("~/Downloads/dieworkwear_posts.json"))
 
+# Curated catalog extracted from TikTok menswear creators. Loaded once at
+# startup. Treated as brand+category EVIDENCE (not a contract for specific
+# products) so it stays useful as items get discontinued or renamed — Claude
+# uses it to know which brands are vouched for in which lanes/categories,
+# and search_product hunts for the brand's current matching item.
+_TIKTOK_CATALOG_PATH = os.path.join(os.path.dirname(__file__), "data", "tiktok_catalog.json")
+TIKTOK_CATALOG = []
+try:
+    with open(_TIKTOK_CATALOG_PATH) as _f:
+        TIKTOK_CATALOG = json.load(_f).get("records", [])
+    logger.info("Loaded TikTok catalog: %d records from %s",
+                len(TIKTOK_CATALOG), _TIKTOK_CATALOG_PATH)
+except FileNotFoundError:
+    logger.warning("TikTok catalog not found at %s — running without curated brand evidence",
+                   _TIKTOK_CATALOG_PATH)
+
+
+def format_catalog_for_prompt() -> str:
+    """Render the curated catalog as a brand+category evidence section for
+    the outfit-composition prompt. Groups by lane → category, lists brands
+    with example items and prices. The price ladders get a dedicated section
+    so Claude can pick the right brand for the user's budget tier."""
+    if not TIKTOK_CATALOG:
+        return ""
+
+    # Group product cards: lane -> category -> [items]
+    by_lane: dict = {}
+    for r in TIKTOK_CATALOG:
+        if r.get("type") != "product_card":
+            continue
+        lane = r.get("lane_guess") or "uncategorized"
+        cat = r.get("category") or "other"
+        by_lane.setdefault(lane, {}).setdefault(cat, []).append(r)
+
+    lines = ["═══ CURATED BRAND CATALOG ═══",
+             "Brands and items vetted by trusted menswear curators. Use these as a "
+             "STRONG PREFERENCE when they fit the vibe. Treat catalog items as "
+             "evidence that the brand makes great pieces in this category — you "
+             "may commit to the brand even if a different specific product is more "
+             "appropriate for the vibe (the system will search the brand's site for "
+             "the current matching item).",
+             ""]
+
+    for lane in sorted(by_lane):
+        lines.append(f"LANE: {lane}")
+        for cat in sorted(by_lane[lane]):
+            items = by_lane[lane][cat]
+            lines.append(f"  {cat}:")
+            for it in items:
+                price = it.get("price")
+                price_str = f"${price}" if price else "?"
+                brand = it.get("brand") or "?"
+                name = it.get("name") or "?"
+                lines.append(f"    - {brand} — {name} ({price_str})")
+        lines.append("")
+
+    # Price-ladder section: best for budget-aware picking
+    ladders = [r for r in TIKTOK_CATALOG if r.get("type") == "price_ladder"]
+    if ladders:
+        lines.append("═══ PRICE-TIER BRAND MAP (for budget-aware picking) ═══")
+        for ld in ladders:
+            cat_name = ld.get("category_name") or ld.get("category") or "?"
+            opts = ld.get("options") or []
+            opts_str = " / ".join(
+                f"{o.get('brand')} (${o.get('price')}, {o.get('tier')})"
+                for o in opts
+            )
+            lines.append(f"{cat_name}: {opts_str}")
+        lines.append("")
+
+    return "\n".join(lines)
+
+
+CATALOG_PROMPT_TEXT = format_catalog_for_prompt()
+logger.info("Catalog prompt block: %d chars", len(CATALOG_PROMPT_TEXT))
+
 # ── Build image index: map post titles to their local image filenames ────────
 IMAGE_INDEX = {}  # title -> [{"file": "post_0001_img_00.jpg", "url": "https://..."}]
 try:
@@ -105,13 +181,12 @@ You MUST respond with ONLY a valid JSON array of 6-8 objects. No markdown, no ex
 Each object must have:
 - "item": a specific, searchable garment or accessory description (style, color, fabric, fit). Be specific enough that searching for it on a retailer's site would find the right kind of product.
 - "slot": one of "outerwear", "top", "bottom", "shoes", or "accessory" — indicates what part of the outfit this is.
-
-Do NOT include brand names — the system will search across a curated set of retailers automatically. Focus purely on describing the right ITEMS for the vibe.
+- "brand": when possible, commit to a specific brand — STRONGLY PREFER brands from the curated catalog provided in the user message (or brands clearly adjacent to that lane). Use the catalog as evidence that a brand is good in this category, even if the specific product you'd commission from them is different from the catalog example. If no catalog brand fits and you don't have a confident pick, return an empty string "" and the system will broaden the search.
 
 Cover a full outfit: outerwear (jacket/blazer/coat — skip if not needed for the vibe), top (shirt/sweater/polo), bottom (pants/shorts), shoes, and 1-2 accessories (belt, watch, sunglasses, tie, pocket square, etc).
 
 Example output:
-[{"item": "unstructured navy linen blazer", "slot": "outerwear"}, {"item": "white linen spread-collar shirt", "slot": "top"}, {"item": "cream cotton chinos slim fit", "slot": "bottom"}, {"item": "brown leather penny loafers", "slot": "shoes"}, {"item": "navy knit silk tie", "slot": "accessory"}, {"item": "white linen pocket square", "slot": "accessory"}]
+[{"item": "unstructured navy linen blazer", "slot": "outerwear", "brand": "Drake's"}, {"item": "white linen spread-collar shirt", "slot": "top", "brand": "Sid Mashburn"}, {"item": "cream cotton chinos slim fit", "slot": "bottom", "brand": "Bonobos"}, {"item": "brown leather penny loafers", "slot": "shoes", "brand": "Allen Edmonds"}, {"item": "navy knit silk tie", "slot": "accessory", "brand": ""}, {"item": "white linen pocket square", "slot": "accessory", "brand": ""}]
 """
 
 
@@ -344,6 +419,35 @@ class VibeResponse(BaseModel):
 
 import re as _re
 import random as _random
+from urllib.parse import urlparse as _urlparse
+
+# Slot-generic fallback queries used by the final-guarantee block in /shop-vibe.
+# When an essential slot (top/bottom/shoes) fails the brand-specific search AND
+# the no-brand retry, we try these progressively-broader queries until one
+# returns a real product. Without this the user can ship with a missing piece.
+_FALLBACK_QUERIES = {
+    "top": [
+        "men's t-shirt",
+        "men's cotton t-shirt",
+        "men's button-down shirt",
+        "men's athletic shirt",
+    ],
+    "bottom": [
+        "men's chinos",
+        "men's pants",
+        "men's shorts",
+        "men's jeans",
+    ],
+    "shoes": [
+        "men's sneakers",
+        "men's loafers",
+        "men's leather dress shoes",
+    ],
+    "outerwear": [
+        "men's jacket",
+        "men's coat",
+    ],
+}
 
 # ── Curated retailer list ─────────────────────────────────────────────────────
 # Organized by price tier. search_product picks a random subset per query
@@ -495,37 +599,110 @@ def _is_bad_title(title: str) -> bool:
 
 def _scrape_product_image(url: str, timeout: float = 5.0) -> str:
     """Try to extract the product image from the actual product page.
-    Looks for og:image, twitter:image, or common product image meta tags."""
+    Looks for og:image, twitter:image, or common product image meta tags.
+
+    Returns "" if the product is out of stock (detected via schema.org JSON-LD).
+
+    For pages where og:image points to a generic lookbook/campaign photo
+    instead of the actual product (some Shopify stores do this — e.g.
+    Save Khaki's twill short page sets og:image to a campaign shot, while
+    the real product gallery lives under SKU-named filenames), fall through
+    to gallery images whose filename overlaps with the URL slug.
+    """
     try:
         resp = _requests.get(url, timeout=timeout, headers={
             "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
         })
         if resp.status_code != 200:
             return ""
-        html = resp.text[:100_000]  # Only scan first 100KB
 
-        # Try og:image first (most reliable for product pages)
+        # Drop out-of-stock products. Most retailers (especially Shopify stores)
+        # emit schema.org JSON-LD with offers.availability. Bail if any offer
+        # says OutOfStock AND no offer says InStock — this correctly handles
+        # variant products where some sizes are OOS but others are still
+        # available (those pages contain both markers).
+        # IMPORTANT: scan the FULL HTML, not just the first 100KB — availability
+        # markers are often in a JSON-LD block deep in the page.
+        full_lower = resp.text.lower()
+        if ("schema.org/outofstock" in full_lower
+                and "schema.org/instock" not in full_lower):
+            return ""
+
+        head_html = resp.text[:100_000]   # head-only for og:image regex
+        full_html = resp.text[:300_000]   # widened for gallery image scan
+
+        # Step 1: try og:image first (most reliable for normal product pages).
+        # Patterns use [^>]* rather than \s+ between <meta and attributes so
+        # they match tags with extra attributes (e.g. React Helmet:
+        # <meta data-react-helmet="true" property="og:image" content="...">).
+        og_image = ""
         for pattern in [
-            r'<meta\s+property=["\']og:image["\']\s+content=["\'](https?://[^"\']+)["\']',
-            r'<meta\s+content=["\'](https?://[^"\']+)["\']\s+property=["\']og:image["\']',
-            r'<meta\s+name=["\']twitter:image["\']\s+content=["\'](https?://[^"\']+)["\']',
-            r'<meta\s+content=["\'](https?://[^"\']+)["\']\s+name=["\']twitter:image["\']',
+            r'<meta[^>]*property=["\']og:image["\'][^>]*content=["\'](https?://[^"\']+)',
+            r'<meta[^>]*content=["\'](https?://[^"\']+)["\'][^>]*property=["\']og:image',
+            r'<meta[^>]*name=["\']twitter:image["\'][^>]*content=["\'](https?://[^"\']+)',
+            r'<meta[^>]*content=["\'](https?://[^"\']+)["\'][^>]*name=["\']twitter:image',
         ]:
-            m = _re.search(pattern, html, _re.IGNORECASE)
+            m = _re.search(pattern, head_html, _re.IGNORECASE)
             if m:
                 img_url = m.group(1)
-                # Skip placeholder/logo images
                 lower = img_url.lower()
-                if any(s in lower for s in ("logo", "favicon", "placeholder", "1x1", "pixel")):
+                if not any(s in lower for s in ("logo", "favicon", "placeholder", "1x1", "pixel")):
+                    og_image = img_url
+                    break
+
+        # Step 2: build slug tokens from the URL's last path segment, with
+        # leading-zero variants. Used to detect whether og:image is actually
+        # this product's image vs. a generic campaign shot.
+        slug = _urlparse(url).path.rstrip("/").split("/")[-1].lower()
+        slug_tokens = set()
+        for t in _re.findall(r"[a-z0-9]{3,}", slug):
+            slug_tokens.add(t)
+            # "sk009071" -> also try "sk9071" (Shopify often drops zero pads)
+            normed = _re.sub(r"(\D)0+(\d)", r"\1\2", t)
+            if normed != t and len(normed) >= 3:
+                slug_tokens.add(normed)
+
+        def _has_slug_overlap(img_url: str) -> bool:
+            fname = img_url.rsplit("/", 1)[-1].lower()
+            return any(t in fname for t in slug_tokens)
+
+        # Step 3: if og:image already references this product's slug, it's
+        # the right image — return it without scanning the gallery.
+        if og_image and slug_tokens and _has_slug_overlap(og_image):
+            return og_image
+
+        # Step 4: og:image is missing or generic. Hunt the gallery for an
+        # image whose filename matches the URL slug. Take the first match
+        # in source order so we get the "main" angle/color.
+        if slug_tokens:
+            for img in _re.findall(
+                r'(https?://[^"\'\s>]+\.(?:jpg|jpeg|png|webp))',
+                full_html,
+                _re.IGNORECASE,
+            ):
+                lower = img.lower()
+                if any(s in lower for s in (
+                        "logo", "favicon", "placeholder", "1x1", "pixel", "icon", "sprite")):
                     continue
-                return img_url
-        return ""
+                if _has_slug_overlap(img):
+                    return img
+
+        # Step 5: fall back to og:image (or empty if even that wasn't found).
+        return og_image
     except Exception:
         return ""
 
 
-def search_product(item_info, budget="", exclude_links=None) -> dict:
-    """Search for a real, in-stock product using SerpAPI Google organic + images."""
+def search_product(item_info, budget="", exclude_links=None, force_no_brand=False) -> dict:
+    """Search for a real, in-stock product using SerpAPI Google organic + images.
+
+    When item_info contains a "brand" commitment AND force_no_brand is False,
+    runs a brand-targeted open-web search ("men's <brand> <item>") so the
+    result lands on the brand's actual product page. When no brand is given
+    OR force_no_brand=True, falls back to the curated-retailer site filter
+    (the original behavior). The retry chain in /shop-vibe uses
+    force_no_brand=True to broaden a failed brand-committed search.
+    """
     if exclude_links is None:
         exclude_links = []
     exclude_set = set(exclude_links)
@@ -534,14 +711,23 @@ def search_product(item_info, budget="", exclude_links=None) -> dict:
         item, brand, product = item_info, "", ""
     else:
         item = item_info.get("item", "")
-        brand = item_info.get("brand", "")
+        brand = item_info.get("brand", "") if not force_no_brand else ""
         product = item_info.get("product", "")
 
-    # Build item query (no brand bias — let the site: filter handle sourcing)
-    query = f"men's {item}"
-
-    # Build site-restricted search query (pass item text for athletic detection)
-    site_filter = _get_site_query(budget, item_hint=item)
+    # Build the search query.
+    # - If Claude committed to a brand (and we're not forcing no-brand mode),
+    #   open the search wide and target the brand directly. The brand is the
+    #   precision signal; the site filter would only hurt.
+    # - Otherwise, fall back to the original site-restricted curated-retailer
+    #   pool with no brand bias.
+    if brand:
+        query = f"men's {brand} {item}"
+        site_filter = ""
+        serp_q = query
+    else:
+        query = f"men's {item}"
+        site_filter = _get_site_query(budget, item_hint=item)
+        serp_q = f"{query} ({site_filter})"
 
     skip_paths = ("/blog/", "/blogs/", "/article/", "/wiki/", "/news/",
                   "/review/", "/magazine/", "/editorial/", "/guide/")
@@ -552,7 +738,7 @@ def search_product(item_info, budget="", exclude_links=None) -> dict:
     try:
         search = GoogleSearch({
             "engine": "google",
-            "q": f"{query} ({site_filter})",
+            "q": serp_q,
             "api_key": SERPAPI_KEY,
             "num": 15,
             "gl": "us",
@@ -778,9 +964,13 @@ async def get_vibe_recommendations(req: VibeRequest):
 
 ---
 
+{CATALOG_PROMPT_TEXT}
+
+---
+
 The user wants to dress for this vibe/occasion: "{req.vibe}"
 {format_profile(req.profile)}
-Return a JSON array of 6-8 item descriptions for a complete outfit that nails this vibe. Remember: ONLY output the JSON array, nothing else."""
+Return a JSON array of 6-8 item descriptions for a complete outfit that nails this vibe. Each object should include "item", "slot", AND "brand" (commit to a brand from the curated catalog when one fits the vibe, otherwise return brand=""). Remember: ONLY output the JSON array, nothing else."""
 
     try:
         raw_items = ask_claude(VIBE_ITEMS_PROMPT, [{"type": "text", "text": items_message}])
@@ -812,17 +1002,21 @@ Return a JSON array of 6-8 item descriptions for a complete outfit that nails th
     ]
     search_results = await asyncio.gather(*search_tasks)
 
-    # Build ShopItems from search results
+    # Build ShopItems from successful search results, queue failed essentials
     items = []
+    failed_essential = []  # essential slots (top/bottom/shoes) that need retry
     for item_info, sr in zip(item_descriptions, search_results):
-        if not sr["link"] or not sr.get("price") or not sr.get("image_url"):
-            continue
         if isinstance(item_info, str):
             s_item = item_info
             slot = "accessory"
         else:
             s_item = item_info.get("item", "")
             slot = item_info.get("slot", "accessory")
+
+        if not sr["link"] or not sr.get("price") or not sr.get("image_url"):
+            if slot in ("top", "bottom", "shoes"):
+                failed_essential.append(item_info)
+            continue
 
         items.append(ShopItem(
             name=sr["title"],
@@ -835,6 +1029,64 @@ Return a JSON array of 6-8 item descriptions for a complete outfit that nails th
             search_product="",
             slot=slot,
         ))
+
+    # Retry chain for failed essential slots.
+    # Tier 1: re-search with brand stripped (force_no_brand=True). Claude's
+    # first brand commitment may have been out of stock or 404'd; falling
+    # back to the curated-retailer site filter often finds a similar item.
+    if failed_essential:
+        retry_tasks = [
+            loop.run_in_executor(
+                _executor, search_product, item_info, budget, None, True
+            )
+            for item_info in failed_essential
+        ]
+        retry_results = await asyncio.gather(*retry_tasks)
+        still_failed = []
+        for item_info, sr in zip(failed_essential, retry_results):
+            if not sr["link"] or not sr.get("price") or not sr.get("image_url"):
+                still_failed.append(item_info)
+                continue
+            s_item = item_info if isinstance(item_info, str) else item_info.get("item", "")
+            slot = "accessory" if isinstance(item_info, str) else item_info.get("slot", "accessory")
+            items.append(ShopItem(
+                name=sr["title"], brand="", price=sr["price"],
+                link=sr["link"], description=s_item, image=sr["image_url"],
+                search_item=s_item, search_product="", slot=slot,
+            ))
+        failed_essential = still_failed
+
+    # Tier 2 (final guarantee): for any essential slot STILL missing — either
+    # because Claude omitted it from JSON entirely OR because all branded +
+    # broadened searches failed — try a list of progressively broader
+    # slot-generic queries until one returns a real product. Without this
+    # the user can ship with no shirt for an "outdoor concert" vibe.
+    delivered_slots = {it.slot for it in items}
+    for required_slot in ("top", "bottom", "shoes"):
+        if required_slot in delivered_slots:
+            continue
+        for fq in _FALLBACK_QUERIES.get(required_slot, []):
+            sr = await loop.run_in_executor(
+                _executor, search_product,
+                {"item": fq, "brand": "", "product": ""}, budget, None, True
+            )
+            if sr["link"] and sr.get("price") and sr.get("image_url"):
+                items.append(ShopItem(
+                    name=sr["title"], brand="", price=sr["price"],
+                    link=sr["link"], description=fq, image=sr["image_url"],
+                    search_item=fq, search_product="", slot=required_slot,
+                ))
+                logger.info(
+                    "shop-vibe '%s': final-guarantee filled '%s' with '%s'",
+                    req.vibe, required_slot, fq,
+                )
+                break
+        else:
+            logger.error(
+                "shop-vibe '%s': FINAL-GUARANTEE FAILED for '%s' — "
+                "essential slot will be missing",
+                req.vibe, required_slot,
+            )
 
     return VibeResponse(vibe=req.vibe, items=items)
 
