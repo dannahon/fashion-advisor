@@ -910,15 +910,28 @@ def _scrape_product_image(url: str, timeout: float = 5.0) -> str:
                     return img
 
         # Step 5: fall back to og:image — but only if it doesn't contradict
-        # the URL slug. Shopify and similar platforms often serve a
-        # "default variant" og:image regardless of which variant URL you
-        # visit (e.g. Todd Snyder's suede penny loafer page hands back the
-        # leather variant's image). When the slug names a fabric or color
-        # and the og:image filename names a DIFFERENT fabric or color in
-        # the same category, return "" so the result is dropped and the
-        # retry chain finds something else.
-        if og_image and _og_image_contradicts_slug(og_image, slug_tokens):
-            return ""
+        # the URL slug. Two distinct rejection paths:
+        #
+        # (a) Active contradiction. The slug says one fabric or color and
+        #     the og:image filename says a different fabric or color in the
+        #     same category — Shopify's variant-default trap (Todd Snyder's
+        #     suede penny loafer page handing back the leather image).
+        #
+        # (b) No overlap when the slug names a specific variant. When the
+        #     slug calls out a color/fabric AND the og:image filename has
+        #     ZERO overlap with any slug token, we can't confirm the image
+        #     matches the variant. This catches sites like Grant Stone,
+        #     which use a single generic-named image (03SIDELoafers.jpg)
+        #     for every color variant of the same shoe — the brown product
+        #     photo gets served for the Crimson variant URL and the user
+        #     sees the wrong shoe.
+        if og_image and slug_tokens:
+            if _og_image_contradicts_slug(og_image, slug_tokens):
+                return ""
+            if slug_tokens & _DESCRIPTIVE_TOKENS:
+                fname = og_image.rsplit("/", 1)[-1].lower()
+                if not any(t in fname for t in slug_tokens):
+                    return ""
         return og_image
     except Exception:
         return ""
