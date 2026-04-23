@@ -73,18 +73,36 @@ except FileNotFoundError:
                    _TIKTOK_CATALOG_PATH)
 
 
+# Brands we deliberately don't recommend, even when they're in the curated
+# catalog. Currently used to suppress brands whose own website has template
+# behavior that consistently produces wrong-image / wrong-variant cards
+# (Todd Snyder's Shopify variant-default issue). Match is case-insensitive.
+BLOCKED_CATALOG_BRANDS = {"todd snyder"}
+
+
+def _is_blocked_brand(brand_str) -> bool:
+    if not brand_str:
+        return False
+    return str(brand_str).strip().lower() in BLOCKED_CATALOG_BRANDS
+
+
 def format_catalog_for_prompt() -> str:
     """Render the curated catalog as a brand+category evidence section for
     the outfit-composition prompt. Groups by lane → category, lists brands
     with example items and prices. The price ladders get a dedicated section
-    so Claude can pick the right brand for the user's budget tier."""
+    so Claude can pick the right brand for the user's budget tier.
+
+    Catalog records whose brand is in BLOCKED_CATALOG_BRANDS are stripped
+    from both sections so Claude doesn't see them as options."""
     if not TIKTOK_CATALOG:
         return ""
 
-    # Group product cards: lane -> category -> [items]
+    # Group product cards: lane -> category -> [items], skipping blocked brands
     by_lane: dict = {}
     for r in TIKTOK_CATALOG:
         if r.get("type") != "product_card":
+            continue
+        if _is_blocked_brand(r.get("brand")):
             continue
         lane = r.get("lane_guess") or "uncategorized"
         cat = r.get("category") or "other"
@@ -112,13 +130,18 @@ def format_catalog_for_prompt() -> str:
                 lines.append(f"    - {brand} — {name} ({price_str})")
         lines.append("")
 
-    # Price-ladder section: best for budget-aware picking
+    # Price-ladder section: best for budget-aware picking. Drop any blocked
+    # brand entries from each ladder; if a ladder ends up with no entries,
+    # skip the line entirely.
     ladders = [r for r in TIKTOK_CATALOG if r.get("type") == "price_ladder"]
     if ladders:
         lines.append("═══ PRICE-TIER BRAND MAP (for budget-aware picking) ═══")
         for ld in ladders:
             cat_name = ld.get("category_name") or ld.get("category") or "?"
-            opts = ld.get("options") or []
+            opts = [o for o in (ld.get("options") or [])
+                    if not _is_blocked_brand(o.get("brand"))]
+            if not opts:
+                continue
             opts_str = " / ".join(
                 f"{o.get('brand')} (${o.get('price')}, {o.get('tier')})"
                 for o in opts
@@ -505,7 +528,6 @@ RETAILERS = {
         "muttonheadstore.com",
     ],
     "mid": [
-        "toddsnyder.com",
         "bonobos.com",
         "spiermackay.com",
         "percivalclo.com",
@@ -983,6 +1005,10 @@ def search_product(item_info, budget="", exclude_links=None, force_no_brand=Fals
         "luisaviaroma.com", "browns.com", "brownsfashion.com",
         "stagprovisions.com",
         "zappos.com",  # multi-brand shoe marketplace
+        # Brand-direct sites we've blocked because their template behavior
+        # consistently causes wrong-image / wrong-variant issues that the
+        # contradiction check can't fully fix.
+        "toddsnyder.com",
     )
 
     result = {"query": query, "title": "", "link": "", "price": "", "image_url": ""}
