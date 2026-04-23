@@ -548,7 +548,6 @@ RETAILERS = {
         "beringia.world",
     ],
     "shoes": [
-        "grantstoneshoes.com",
         "aldenshop.com",
         "paraboot.com",
         "ghbass.com",
@@ -1040,6 +1039,7 @@ def search_product(item_info, budget="", exclude_links=None, force_no_brand=Fals
         # consistently causes wrong-image / wrong-variant issues that the
         # contradiction check can't fully fix.
         "toddsnyder.com",
+        "grantstoneshoes.com",  # one generic photo per shoe across all colors
         # Menswear content blogs / editorial roundup farms. These rank well
         # for product queries but link to articles, not product pages — and
         # the embedded affiliate links go through redirect chains we can't
