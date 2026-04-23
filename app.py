@@ -719,6 +719,56 @@ _MIN_PRICE_BY_SLOT = {
 }
 
 
+# Tokens used to detect Shopify's "variant-default og:image" trap, where
+# the og:image points to a different product variant (e.g. the suede penny
+# loafer URL serves the leather variant's og:image). We split them into
+# fabric and color buckets so we can detect *contradictions* — if the slug
+# names one fabric and the og:image filename names a different one, we
+# know the og:image is wrong.
+_FABRIC_TOKENS = {
+    "suede", "leather", "wool", "linen", "cotton", "silk", "cashmere",
+    "denim", "corduroy", "flannel", "oxford", "chambray", "twill",
+    "gabardine", "fleece", "jersey", "knit", "mesh", "velvet", "satin",
+    "velour", "canvas", "nylon", "polyester", "tweed", "shearling",
+}
+_COLOR_TOKENS = {
+    "navy", "black", "white", "gray", "grey", "brown", "tan", "olive",
+    "khaki", "beige", "cream", "ivory", "red", "blue", "green", "yellow",
+    "pink", "purple", "orange", "burgundy", "maroon", "charcoal", "sand",
+    "rust", "mint", "sage", "forest", "royal", "indigo", "ecru", "stone",
+    "camel", "cognac", "oxblood", "midnight", "nautical",
+}
+_DESCRIPTIVE_TOKENS = _FABRIC_TOKENS | _COLOR_TOKENS
+
+
+def _og_image_contradicts_slug(og_image_url: str, slug_tokens: set) -> bool:
+    """Detect the Shopify variant-default og:image trap.
+
+    Returns True if the og:image filename names a fabric or color that
+    contradicts a fabric or color named in the URL slug. Doesn't reject
+    just because a descriptor is missing from the filename — many real
+    product images use abbreviated filenames. Only rejects when one
+    side names a descriptor and the other side names a DIFFERENT
+    descriptor in the same category.
+    """
+    if not og_image_url or not slug_tokens:
+        return False
+    fname = og_image_url.rsplit("/", 1)[-1].lower()
+    fname_tokens = set(_re.findall(r"[a-z]{3,}", fname))
+
+    slug_fabrics = slug_tokens & _FABRIC_TOKENS
+    fname_fabrics = fname_tokens & _FABRIC_TOKENS
+    if slug_fabrics and fname_fabrics and not (slug_fabrics & fname_fabrics):
+        return True
+
+    slug_colors = slug_tokens & _COLOR_TOKENS
+    fname_colors = fname_tokens & _COLOR_TOKENS
+    if slug_colors and fname_colors and not (slug_colors & fname_colors):
+        return True
+
+    return False
+
+
 def _scrape_product_image(url: str, timeout: float = 5.0) -> str:
     """Try to extract the product image from the actual product page.
     Looks for og:image, twitter:image, or common product image meta tags.
@@ -834,7 +884,16 @@ def _scrape_product_image(url: str, timeout: float = 5.0) -> str:
                 if _has_slug_overlap(img):
                     return img
 
-        # Step 5: fall back to og:image (or empty if even that wasn't found).
+        # Step 5: fall back to og:image — but only if it doesn't contradict
+        # the URL slug. Shopify and similar platforms often serve a
+        # "default variant" og:image regardless of which variant URL you
+        # visit (e.g. Todd Snyder's suede penny loafer page hands back the
+        # leather variant's image). When the slug names a fabric or color
+        # and the og:image filename names a DIFFERENT fabric or color in
+        # the same category, return "" so the result is dropped and the
+        # retry chain finds something else.
+        if og_image and _og_image_contradicts_slug(og_image, slug_tokens):
+            return ""
         return og_image
     except Exception:
         return ""
