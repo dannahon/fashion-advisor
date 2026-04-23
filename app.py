@@ -551,7 +551,6 @@ RETAILERS = {
         "aldenshop.com",
         "paraboot.com",
         "ghbass.com",
-        "meermin.com",
     ],
     "athletic": [
         "reigningchamp.com",
@@ -1040,6 +1039,7 @@ def search_product(item_info, budget="", exclude_links=None, force_no_brand=Fals
         # contradiction check can't fully fix.
         "toddsnyder.com",
         "grantstoneshoes.com",  # one generic photo per shoe across all colors
+        "meermin.com",          # filename has SKU but image doesn't match variant
         # Menswear content blogs / editorial roundup farms. These rank well
         # for product queries but link to articles, not product pages — and
         # the embedded affiliate links go through redirect chains we can't
