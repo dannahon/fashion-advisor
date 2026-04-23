@@ -480,6 +480,20 @@ _FALLBACK_QUERIES = {
 # ── Curated retailer list ─────────────────────────────────────────────────────
 # Organized by price tier. search_product picks a random subset per query
 # to ensure variety across recommendations.
+# BRAND-DIRECT sites only — no multi-brand retailers like Mr Porter, SSENSE,
+# Saks, End Clothing, Nordstrom, Farfetch, etc. Retailers are excluded
+# because:
+#   1. Variant-default og:image issues — they aggregate products from many
+#      brands and their templates handle variants poorly (Saks served the
+#      smooth penny loafer image for a pebble-grained product page).
+#   2. Aggressive bot protection — most are behind Cloudflare/PerimeterX,
+#      which blocks our image scraper and OOS detection.
+#   3. Faceted-nav category leakage — their URL patterns produce category
+#      pages that look like product pages to Google.
+#   4. Lower affiliate margins than going direct to the brand.
+# All multi-brand retailers are explicitly listed in `skip_domains` inside
+# search_product so they're never returned even by brand-committed open-web
+# searches.
 RETAILERS = {
     "budget": [
         "uniqlo.com",
@@ -500,24 +514,13 @@ RETAILERS = {
         "theory.com",
         "milworks.co",
         "heimat-textil.com",
-        "wittmore.com",
         "deuscustoms.com",
-        "thereviveclub.com",
         "mfpen.com",
     ],
     "premium": [
         "drakes.com",
         "sidmashburn.com",
         "jamesperse.com",
-        "mrporter.com",
-        "nomanwalksalone.com",
-        "bergbergstore.com",
-        "saksfifthavenue.com",
-        "endclothing.com",
-        "ssense.com",
-        "standardandstrange.com",
-        "shoplostfound.com",
-        "meridianboutique.com",
         "equipment.store",
         "warthog.vip",
         "beringia.world",
@@ -938,17 +941,48 @@ def search_product(item_info, budget="", exclude_links=None, force_no_brand=Fals
 
     skip_paths = ("/blog/", "/blogs/", "/article/", "/wiki/", "/news/",
                   "/review/", "/magazine/", "/editorial/", "/guide/")
-    # Resale marketplaces, social platforms, content farms, and other domains
-    # that produce noisy or untrustworthy product results. eBay listings in
-    # particular keep landing in branded searches at suspiciously low prices
-    # (the "$29.87 Buck Mason shorts" failure mode).
+    # Three categories of domains we never want returned, all in one tuple
+    # so the search loop can short-circuit early:
+    #
+    # (1) Resale marketplaces — eBay, Poshmark, Grailed, etc. produce
+    #     suspiciously cheap branded results ("$29.87 Buck Mason shorts").
+    # (2) Social platforms / content farms — Pinterest, Reddit, YouTube,
+    #     Wikipedia, etc. — never sell products themselves.
+    # (3) Multi-brand retailers — Saks, Mr Porter, SSENSE, End Clothing,
+    #     Nordstrom, Farfetch, etc. We deliberately go BRAND-DIRECT instead.
+    #     Retailers cause variant-default og:image issues (Shopify-style
+    #     templates serving the wrong variant's image), are aggressively
+    #     bot-protected (Cloudflare/PerimeterX block our scraper), and pay
+    #     lower affiliate margins than going direct to the brand.
     skip_domains = (
+        # Resale & marketplaces
         "ebay.", "poshmark.com", "grailed.com", "etsy.com",
         "mercari.com", "depop.com", "vestiairecollective.",
-        "therealreal.com", "stockx.com", "goat.com", "facebook.com",
-        "instagram.com", "tiktok.com", "twitter.com", "x.com/",
-        "pinterest.", "reddit.com", "youtube.com", "wikipedia.org",
+        "therealreal.com", "stockx.com", "goat.com",
         "amazon.com/dp", "walmart.com",
+        # Social / content farms
+        "facebook.com", "instagram.com", "tiktok.com", "twitter.com",
+        "x.com/", "pinterest.", "reddit.com", "youtube.com",
+        "wikipedia.org",
+        # Multi-brand retailers — go brand-direct instead
+        "saksfifthavenue.com", "saksoff5th.com",
+        "mrporter.com", "net-a-porter.com",
+        "ssense.com",
+        "endclothing.com", "end.clothing",
+        "nordstrom.com", "nordstromrack.com",
+        "neimanmarcus.com", "bergdorfgoodman.com", "bloomingdales.com",
+        "macys.com",
+        "farfetch.com", "matchesfashion.com", "mytheresa.com",
+        "shopbop.com", "modaoperandi.com", "moda-operandi.com",
+        "harrods.com", "selfridges.com", "liberty.co.uk",
+        "24s.com", "yoox.com", "the-outnet.com", "gilt.com",
+        "huckberry.com", "needsupply.com",
+        "nomanwalksalone.com", "standardandstrange.com",
+        "shoplostfound.com", "meridianboutique.com",
+        "wittmore.com", "thereviveclub.com",
+        "luisaviaroma.com", "browns.com", "brownsfashion.com",
+        "stagprovisions.com",
+        "zappos.com",  # multi-brand shoe marketplace
     )
 
     result = {"query": query, "title": "", "link": "", "price": "", "image_url": ""}
