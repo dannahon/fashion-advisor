@@ -217,6 +217,9 @@ NEVER recommend:
 - Boat shoes / deck shoes / Sperry-style topsiders. Ever. For any vibe.
 - Swim trunks / board shorts / swim shorts unless the vibe is EXPLICITLY beach, pool, boat, or surf. Outdoor concert is not a beach. Picnic is not a beach.
 - Loafers for outdoor sports, concerts, hiking, athletic activities, or anything where you'd be on your feet for hours.
+- A regular belt with a tuxedo or formal black-tie outfit. Tuxedo trousers use side adjusters or suspenders, never a belt.
+- A regular suit (notch lapels, plain wool) when the vibe is black tie. Black tie REQUIRES a tuxedo with satin/grosgrain peak or shawl lapels.
+- Smooth or matte leather shoes for black tie. Patent leather only.
 - Novelty / costume pieces (huaraches, bolo ties, fedoras, capri-length anything, tropical M-65 coats, Portuguese flannel camp shirts, ascots, monocles).
 - Avant-garde / runway-y labels (Junya, CDG, Yohji, Rick Owens, Bode for clothing, Visvim, Story mfg, Engineered Garments) unless the user explicitly asks for designer/avant-garde.
 - Sunglasses with cat-eye, oversized round, or other shapes that read as women's frames. Stick to classic shapes (aviator, wayfarer, clubmaster, square) for menswear.
@@ -230,6 +233,13 @@ SCENARIO SPECIFICS
 - Office / business casual → chinos or wool trousers, oxford or polo, leather sneakers or loafers.
 - Wedding (non-themed) → suit or odd jacket + trousers, dress shirt, dress shoes.
 - Beach wedding / destination wedding (Italy, Greece, Mexico, Caribbean, etc.) → light linen suit OR linen blazer + linen trousers in cream/sand/light tan/pale blue. Linen or fine cotton shirt (often spread-collar, no tie or a knit tie). Suede loafers or espadrilles. NEVER corduroy, NEVER long-sleeve oxford dress shirts in heavy fabric, NEVER thick wool. Think "Italian summer", not "American office wedding".
+- Black tie / black tie wedding / formal evening → REQUIRES a tuxedo, not a regular suit. Specifically:
+    OUTERWEAR: black tuxedo jacket with peak lapels or shawl collar, satin or grosgrain facings (e.g. "Suitsupply Lazio Tuxedo Jacket Black", "J.Crew Ludlow Tuxedo Jacket")
+    BOTTOM: matching black tuxedo trousers with satin side stripe (the trousers are SOLD WITH the jacket as a tuxedo/dinner suit set). Item description: "black wool tuxedo trousers with satin side stripe"
+    TOP: white tuxedo shirt — pleated bib front, French cuffs, wing or spread collar (e.g. "Brooks Brothers Pleated Tuxedo Shirt")
+    SHOES: patent leather oxfords or opera pumps. Item description: "black patent leather oxford tuxedo shoes" (NEVER smooth dress oxfords, NEVER loafers, NEVER suede, NEVER brown)
+    ACCESSORY: black silk satin or grosgrain bow tie. AT MOST ONE additional accessory (cummerbund, OR cufflinks, OR studs). NEVER a regular tie. NEVER a regular belt — tuxedo trousers are worn with side adjusters or suspenders, not a belt.
+    BRANDS to commit to (in this order of preference): Suitsupply, Brooks Brothers, J.Crew (Ludlow line), Indochino, Black Lapel, Hugo Boss. AVOID catalog brands (Buck Mason, Alex Mill, COS, Massimo Dutti, etc.) — they don't make tuxedos. Override the catalog injection for this vibe.
 - Cool evening out → light jacket or sweater fine, jeans or chinos, sneakers or loafers.
 - Warm-weather casual → no jackets, no hats unless user asked for one.
 - First day of [job/school] → smart casual, slightly overdressed beats underdressed.
@@ -767,6 +777,62 @@ _MIN_PRICE_BY_SLOT = {
 }
 
 
+# Slot-mismatch sanity check. When a result's title clearly indicates a
+# different slot than the one we're filling, reject it. This catches the
+# "boat shoe in the bottom slot" failure mode — a curated retailer like
+# Percival ranks well for "men's tuxedo trousers" because their store has
+# a Kleman Alfan TH boat shoe page that Google considers relevant. We can't
+# fix the SerpAPI ranking, but we can reject the result before it ships.
+# Only the most obvious mismatches are listed; over-aggressive matching
+# false-positives on real products (e.g. "shirt jacket" is a real outerwear
+# category, "oxford shirt" is a real top).
+_SLOT_FORBIDDEN_TOKENS = {
+    "top": (
+        " loafer", " loafers", " boot ", " boots", " sneaker", " sneakers",
+        " sandal", " sandals", " espadrille", " espadrilles", " moccasin",
+        " trouser", " trousers", " jeans", " chinos", " shorts ",
+    ),
+    "bottom": (
+        " loafer", " loafers", " boot ", " boots", " sneaker", " sneakers",
+        " sandal", " sandals", " espadrille", " espadrilles", " moccasin",
+        " moccasins", " derby ", " brogue", " oxford shoe", " dress shoe",
+        " boat shoe", " mule ", " slipper",
+        # Outerwear / tops
+        " blazer", " sport coat", " topcoat", " overcoat",
+        " polo ", " sweater", " cardigan", " hoodie", " henley",
+        # Accessories
+        " bag", " tote", " cufflink",
+    ),
+    "shoes": (
+        " trouser", " trousers", " pant ", " pants ", " jeans", " jean ",
+        " chino", " shorts ", " short ",
+        " shirt", " polo ", " sweater", " hoodie",
+        " jacket", " blazer", " coat ", " sport coat",
+        " bag", " tote", " belt ", " tie ", " bowtie",
+    ),
+    "outerwear": (
+        " loafer", " loafers", " boot ", " boots", " sneaker", " sneakers",
+        " sandal", " sandals", " espadrille",
+        " trouser", " trousers", " jeans", " chinos", " shorts ",
+        " bag", " tote", " belt ", " bowtie",
+    ),
+    # Accessory slot is too varied to enforce
+}
+
+
+def _title_matches_slot(slot: str, title: str) -> bool:
+    """Reject results whose title clearly belongs to a different slot.
+    Returns True (pass) when the title is consistent with the slot OR when
+    we have no rule for the slot; False (reject) on a clear mismatch."""
+    if not slot or not title:
+        return True
+    forbidden = _SLOT_FORBIDDEN_TOKENS.get(slot)
+    if not forbidden:
+        return True
+    padded = " " + title.lower() + " "
+    return not any(t in padded for t in forbidden)
+
+
 # Tokens used to detect Shopify's "variant-default og:image" trap, where
 # the og:image points to a different product variant (e.g. the suede penny
 # loafer URL serves the leather variant's og:image). We split them into
@@ -1095,6 +1161,11 @@ def search_product(item_info, budget="", exclude_links=None, force_no_brand=Fals
             if _is_non_us_locale(lower):
                 continue
             if _is_bad_title(title):
+                continue
+            # Slot-keyword sanity: don't accept a "boat shoe" result for a
+            # bottom-slot search, etc. Catches the worst category mismatches
+            # that would otherwise ship.
+            if not _title_matches_slot(slot, title):
                 continue
             # Filter out women's results (title or URL path signals).
             # NOTE: "women's" contains "men's" as a substring, so we must
