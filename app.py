@@ -690,13 +690,31 @@ def _is_non_us_locale(url: str) -> bool:
 def _is_bad_title(title: str) -> bool:
     """Check if a search result title suggests a non-product or category page."""
     lower = title.lower()
-    # Editorial / review / comparison pages
+    # Editorial / review / comparison / roundup pages. "for 2024" / "for 2025"
+    # is a near-perfect signal of an editorial roundup ("Best Navy Sweaters
+    # For 2025", "Our Favorite Boots For 2024"). "our favorite", "best of",
+    # "must-have", "essential" are all roundup giveaways.
     bad_signals = (
         " vs ", " versus ", "comparison", "review:", "best ",
         "top 10", "top 5", "how to", "guide", "slim vs",
+        "our favorite", "our favorites", "favorite", "favourites",
+        "best of", "must-have", "must have", "essential ",
+        "the best", "round-up", "roundup", "we love",
     )
     if any(s in lower for s in bad_signals):
         return True
+    # Year-suffix pattern: "...For 2024", "...In 2025", "...Of 2026", etc.
+    # Almost always an editorial article, not a product page.
+    if _re.search(r"\b(?:for|in|of)\s+20\d{2}\b", lower):
+        return True
+    # Standalone year at the end: "...Sweaters 2025"
+    if _re.search(r"\s20\d{2}$", lower) or _re.search(r"\s20\d{2}\b", lower):
+        # Be careful not to false-positive on real product names that
+        # contain a year (e.g. New Balance 2002R has "2002" in the name).
+        # Only fire if the year is 2020+ (current/recent editorial era).
+        m = _re.search(r"\b(20[2-9]\d)\b", lower)
+        if m and int(m.group(1)) >= 2020 and int(m.group(1)) <= 2030:
+            return True
     # Category / department page titles. SerpAPI titles for these are
     # almost always shaped like "Men's [category] - [Brand]" or
     # "[Brand] Men's [category]" or "Shop Men's [category]" with no
@@ -1022,6 +1040,22 @@ def search_product(item_info, budget="", exclude_links=None, force_no_brand=Fals
         # consistently causes wrong-image / wrong-variant issues that the
         # contradiction check can't fully fix.
         "toddsnyder.com",
+        # Menswear content blogs / editorial roundup farms. These rank well
+        # for product queries but link to articles, not product pages — and
+        # the embedded affiliate links go through redirect chains we can't
+        # follow cleanly. Always skip them in favor of going brand-direct.
+        "gearmoose.com", "gearpatrol.com", "gearjunkie.com",
+        "valetmag.com", "thecoolist.com", "thecoolector.com",
+        "coolmaterial.com", "carryology.com", "iconmenstyle.com",
+        "complex.com", "esquire.com", "gq.com", "menshealth.com",
+        "highsnobiety.com", "hypebeast.com", "uncrate.com",
+        "theadultman.com", "manofmany.com", "fashionbeans.com",
+        "effortlessgent.com", "dappered.com", "permanentstyle.com",
+        "putthison.com", "stylegirlfriend.com", "thevou.com",
+        "menswearmusings.com", "thenobledandy.com",
+        "hespokestyle.com", "opumo.com", "mensfashionmag.com",
+        "businessinsider.com", "buzzfeed.com", "wirecutter.com",
+        "nytimes.com/wirecutter",
     )
 
     result = {"query": query, "title": "", "link": "", "price": "", "image_url": ""}
