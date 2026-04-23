@@ -229,6 +229,7 @@ SCENARIO SPECIFICS
 - Gym / workout / running → performance top, athletic shorts or joggers, trainers.
 - Office / business casual → chinos or wool trousers, oxford or polo, leather sneakers or loafers.
 - Wedding (non-themed) → suit or odd jacket + trousers, dress shirt, dress shoes.
+- Beach wedding / destination wedding (Italy, Greece, Mexico, Caribbean, etc.) → light linen suit OR linen blazer + linen trousers in cream/sand/light tan/pale blue. Linen or fine cotton shirt (often spread-collar, no tie or a knit tie). Suede loafers or espadrilles. NEVER corduroy, NEVER long-sleeve oxford dress shirts in heavy fabric, NEVER thick wool. Think "Italian summer", not "American office wedding".
 - Cool evening out → light jacket or sweater fine, jeans or chinos, sneakers or loafers.
 - Warm-weather casual → no jackets, no hats unless user asked for one.
 - First day of [job/school] → smart casual, slightly overdressed beats underdressed.
@@ -548,7 +549,6 @@ RETAILERS = {
         "beringia.world",
     ],
     "shoes": [
-        "aldenshop.com",
         "paraboot.com",
         "ghbass.com",
     ],
@@ -742,6 +742,13 @@ def _is_bad_title(title: str) -> bool:
     # used by content-farm product-listing pages ("Linen Pants for Mens").
     # Real product titles use "for Men" (singular).
     if " for mens" in lower:
+        return True
+    # "Men's [adjective(s)] [category]" anywhere in title — catches Uniqlo's
+    # "Men's Dress Shirts | UNIQLO US", "Men's Slim Fit Trousers | Brand",
+    # etc. The (?:\w+\s+)* allows zero or more adjective tokens between
+    # "Men's" and the category word.
+    cat_alt = "|".join(cat_words)
+    if _re.search(rf"\bmen'?s\s+(?:\w+\s+)*(?:{cat_alt})\b", lower):
         return True
     return False
 
@@ -1040,6 +1047,7 @@ def search_product(item_info, budget="", exclude_links=None, force_no_brand=Fals
         "toddsnyder.com",
         "grantstoneshoes.com",  # one generic photo per shoe across all colors
         "meermin.com",          # filename has SKU but image doesn't match variant
+        "aldenshop.com",        # generic photos / wrong-variant images
         # Menswear content blogs / editorial roundup farms. These rank well
         # for product queries but link to articles, not product pages — and
         # the embedded affiliate links go through redirect chains we can't
